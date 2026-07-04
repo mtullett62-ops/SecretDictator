@@ -60,6 +60,12 @@ nameInput.addEventListener('keydown', (event) => {
 });
 startButton.addEventListener('click', () => emit('startGame'));
 
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  window.clearTimeout(resizeTimer);
+  resizeTimer = window.setTimeout(renderTableSeating, 120);
+});
+
 const storedName = window.localStorage.getItem(STORED_NAME_KEY);
 if (storedName) nameInput.value = storedName;
 
@@ -214,23 +220,27 @@ function seatSelect(player) {
 
 function renderTableSeating() {
   tableSeating.querySelectorAll('.table-seat').forEach((el) => el.remove());
+  if (!publicState) return;
   const order = publicState.tableOrderIds
     .map((id) => publicState.players.find((player) => player.id === id))
     .filter(Boolean);
   const count = order.length;
   if (!count) return;
 
-  const radiusX = 47;
-  const radiusY = 44;
+  const rect = tableSeating.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const margin = window.innerWidth <= 640 ? 26 : 40;
+  const halfWidth = Math.max(rect.width / 2 - margin, 20);
+  const halfHeight = Math.max(rect.height / 2 - margin, 20);
+  const cornerRadius = Math.min(halfWidth, halfHeight) * 0.6;
+
   order.forEach((player, index) => {
-    const angle = (index / count) * Math.PI * 2 - Math.PI / 2;
-    const left = 50 + radiusX * Math.cos(angle);
-    const top = 50 + radiusY * Math.sin(angle);
+    const { x, y } = roundedRectPerimeterPoint(halfWidth, halfHeight, cornerRadius, index / count);
 
     const seat = document.createElement('div');
     seat.className = 'table-seat';
-    seat.style.left = `${left}%`;
-    seat.style.top = `${top}%`;
+    seat.style.left = `${rect.width / 2 + x}px`;
+    seat.style.top = `${rect.height / 2 + y}px`;
 
     const circle = document.createElement('div');
     circle.className = 'seat-circle';
@@ -256,6 +266,42 @@ function renderTableSeating() {
 
     tableSeating.append(seat);
   });
+}
+
+// Places seats evenly by arc length (not angle) around a rounded-rectangle
+// "racetrack" the shape of the board, so seats don't bunch up on wide boards
+// the way even angle-spacing around an ellipse would.
+function roundedRectPerimeterPoint(halfWidth, halfHeight, cornerRadius, fraction) {
+  const straightX = Math.max(halfWidth - cornerRadius, 0);
+  const straightY = Math.max(halfHeight - cornerRadius, 0);
+  const arcLength = (Math.PI / 2) * cornerRadius;
+  const segments = [
+    { length: straightX, point: (t) => ({ x: t * straightX, y: -halfHeight }) },
+    { length: arcLength, point: (t) => arcPoint(straightX, -straightY, cornerRadius, -90 + t * 90) },
+    { length: 2 * straightY, point: (t) => ({ x: halfWidth, y: -straightY + t * 2 * straightY }) },
+    { length: arcLength, point: (t) => arcPoint(straightX, straightY, cornerRadius, t * 90) },
+    { length: 2 * straightX, point: (t) => ({ x: straightX - t * 2 * straightX, y: halfHeight }) },
+    { length: arcLength, point: (t) => arcPoint(-straightX, straightY, cornerRadius, 90 + t * 90) },
+    { length: 2 * straightY, point: (t) => ({ x: -halfWidth, y: straightY - t * 2 * straightY }) },
+    { length: arcLength, point: (t) => arcPoint(-straightX, -straightY, cornerRadius, 180 + t * 90) },
+    { length: straightX, point: (t) => ({ x: -straightX + t * straightX, y: -halfHeight }) }
+  ];
+
+  const perimeter = segments.reduce((sum, segment) => sum + segment.length, 0);
+  let target = (((fraction % 1) + 1) % 1) * perimeter;
+  for (const segment of segments) {
+    if (segment.length <= 0) continue;
+    if (target <= segment.length) {
+      return segment.point(target / segment.length);
+    }
+    target -= segment.length;
+  }
+  return segments[segments.length - 1].point(1);
+}
+
+function arcPoint(cx, cy, radius, angleDeg) {
+  const angleRad = (angleDeg * Math.PI) / 180;
+  return { x: cx + radius * Math.cos(angleRad), y: cy + radius * Math.sin(angleRad) };
 }
 
 function seatTag(label, kind) {
