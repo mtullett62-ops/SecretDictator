@@ -40,6 +40,7 @@ const playerCountText = document.getElementById('playerCountText');
 const winnerText = document.getElementById('winnerText');
 const pauseNotice = document.getElementById('pauseNotice');
 const playerList = document.getElementById('playerList');
+const tableSeating = document.getElementById('tableSeating');
 const liberalTrack = document.getElementById('liberalTrack');
 const fascistTrack = document.getElementById('fascistTrack');
 const fascistPowerRow = document.getElementById('fascistPowerRow');
@@ -116,6 +117,7 @@ function render() {
   renderPauseNotice();
   renderPlayers();
   renderBoard();
+  renderTableSeating();
   renderPersonal();
   renderActions();
   renderEventToast();
@@ -154,18 +156,24 @@ function isDisconnected(id) {
 function renderPlayers() {
   playerList.innerHTML = '';
   const canRemovePlayers = isMark();
+  const canAssignSeats = isMark() && publicState.phase === 'lobby';
   for (const player of publicState.players) {
     const item = document.createElement('li');
     if (!player.alive) item.classList.add('dead');
     const details = document.createElement('div');
     details.className = 'player-details';
     details.append(player.name);
+    if (typeof player.tableSeat === 'number') details.append(tag(`Seat ${player.tableSeat + 1}`));
     if (player.isPresident) details.append(tag('President'));
     if (player.isChancellor) details.append(tag('Chancellor'));
     if (player.isTermLimited) details.append(tag('Term limited'));
     if (!player.alive) details.append(tag('Dead', true));
     if (!player.connected) details.append(tag('Disconnected', true));
     item.append(details);
+
+    if (canAssignSeats) {
+      item.append(seatSelect(player));
+    }
 
     if (canRemovePlayers && player.id !== privateState.id) {
       const button = document.createElement('button');
@@ -182,6 +190,87 @@ function renderPlayers() {
 
     playerList.append(item);
   }
+}
+
+function seatSelect(player) {
+  const select = document.createElement('select');
+  select.className = 'seat-select';
+  const unseated = document.createElement('option');
+  unseated.value = '';
+  unseated.textContent = 'Unseated';
+  select.append(unseated);
+  for (let seat = 0; seat < 10; seat += 1) {
+    const option = document.createElement('option');
+    option.value = String(seat);
+    option.textContent = `Seat ${seat + 1}`;
+    select.append(option);
+  }
+  select.value = typeof player.tableSeat === 'number' ? String(player.tableSeat) : '';
+  select.addEventListener('change', () => {
+    emit('setPlayerSeat', { playerId: player.id, tableSeat: select.value === '' ? null : Number(select.value) });
+  });
+  return select;
+}
+
+function renderTableSeating() {
+  tableSeating.querySelectorAll('.table-seat').forEach((el) => el.remove());
+  const order = publicState.tableOrderIds
+    .map((id) => publicState.players.find((player) => player.id === id))
+    .filter(Boolean);
+  const count = order.length;
+  if (!count) return;
+
+  const radiusX = 47;
+  const radiusY = 44;
+  order.forEach((player, index) => {
+    const angle = (index / count) * Math.PI * 2 - Math.PI / 2;
+    const left = 50 + radiusX * Math.cos(angle);
+    const top = 50 + radiusY * Math.sin(angle);
+
+    const seat = document.createElement('div');
+    seat.className = 'table-seat';
+    seat.style.left = `${left}%`;
+    seat.style.top = `${top}%`;
+
+    const circle = document.createElement('div');
+    circle.className = 'seat-circle';
+    if (player.isPresident) circle.classList.add('seat-president');
+    if (player.isChancellor) circle.classList.add('seat-chancellor');
+    if (!player.alive) circle.classList.add('seat-dead');
+    if (!player.connected) circle.classList.add('seat-disconnected');
+    circle.textContent = initials(player.name);
+    seat.append(circle);
+
+    if (player.isPresident || player.isChancellor) {
+      const tags = document.createElement('div');
+      tags.className = 'seat-tags';
+      if (player.isPresident) tags.append(seatTag('President', 'president'));
+      if (player.isChancellor) tags.append(seatTag('Chancellor', 'chancellor'));
+      seat.append(tags);
+    }
+
+    const name = document.createElement('div');
+    name.className = 'seat-name';
+    name.textContent = player.name;
+    seat.append(name);
+
+    tableSeating.append(seat);
+  });
+}
+
+function seatTag(label, kind) {
+  const span = document.createElement('span');
+  span.className = `seat-tag seat-tag-${kind}`;
+  span.textContent = label;
+  return span;
+}
+
+function initials(name) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return '?';
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
 function renderBoard() {

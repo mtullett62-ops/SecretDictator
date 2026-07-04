@@ -67,7 +67,7 @@ class Game {
 
   resetGameFrom(socketId) {
     const requester = this.findPlayerBySocket(socketId);
-    if (!requester || requester.name.trim().toLowerCase() !== 'mark') {
+    if (!this.isMark(requester)) {
       throw new Error('Only mark can reset the game.');
     }
 
@@ -103,6 +103,7 @@ class Game {
       id: crypto.randomUUID(),
       socketId,
       name: cleanName,
+      tableSeat: null,
       role: null,
       party: null,
       alive: true,
@@ -138,11 +139,31 @@ class Game {
 
   removePlayerFrom(requesterSocketId, targetPlayerId) {
     const requester = this.findPlayerBySocket(requesterSocketId);
-    if (!requester || requester.name.trim().toLowerCase() !== 'mark') {
+    if (!this.isMark(requester)) {
       throw new Error('Only mark can remove players.');
     }
     const target = this.getPlayer(targetPlayerId);
     this.removePlayerById(target.id, `${target.name} was removed by mark.`);
+  }
+
+  setPlayerSeatFrom(requesterSocketId, targetPlayerId, tableSeat) {
+    this.requirePhase(PHASES.LOBBY);
+    const requester = this.findPlayerBySocket(requesterSocketId);
+    if (!this.isMark(requester)) {
+      throw new Error('Only mark can set table seats.');
+    }
+
+    const target = this.getPlayer(targetPlayerId);
+    const cleanSeat = this.normalizeTableSeat(tableSeat);
+    if (
+      cleanSeat !== null &&
+      this.players.some((player) => player.id !== target.id && player.tableSeat === cleanSeat)
+    ) {
+      throw new Error('That table seat is already taken.');
+    }
+
+    target.tableSeat = cleanSeat;
+    this.addLog(`${target.name} was seated${cleanSeat === null ? '' : ` at table position ${cleanSeat + 1}`}.`);
   }
 
   removePlayerById(playerId, logMessage) {
@@ -207,9 +228,15 @@ class Game {
     if (this.players.some((player) => !player.connected)) {
       throw new Error('All players must be connected before starting.');
     }
+    if (
+      this.players.some((player) => player.tableSeat !== null) &&
+      this.players.some((player) => player.tableSeat === null)
+    ) {
+      throw new Error('Seat every player before starting with table order.');
+    }
 
     const roles = this.shuffledRoles();
-    this.players = this.players.map((player, index) => {
+    this.players = this.tableOrderedPlayers().map((player, index) => {
       const role = roles[index];
       return {
         ...player,
@@ -521,12 +548,25 @@ class Game {
     });
   }
 
+  tableOrderedPlayers() {
+    return [...this.players].sort((left, right) => {
+      const leftSeat = left.tableSeat;
+      const rightSeat = right.tableSeat;
+      if (leftSeat === null && rightSeat === null) return 0;
+      if (leftSeat === null) return 1;
+      if (rightSeat === null) return -1;
+      return leftSeat - rightSeat;
+    });
+  }
+
   publicState() {
+    const tableOrderIds = this.tableOrderedPlayers().map((player) => player.id);
     return {
       phase: this.phase,
       players: this.players.map((player) => ({
         id: player.id,
         name: player.name,
+        tableSeat: player.tableSeat,
         alive: player.alive,
         connected: player.connected,
         isPresident: player.id === this.currentPresidentId,
@@ -535,6 +575,7 @@ class Game {
       })),
       currentPresidentId: this.currentPresidentId,
       currentChancellorId: this.currentChancellorId,
+      tableOrderIds,
       eligibleChancellorIds: this.getEligibleChancellors().map((player) => player.id),
       liberalPolicies: this.liberalPolicies,
       fascistPolicies: this.fascistPolicies,
@@ -656,6 +697,19 @@ class Game {
 
   assertIndex(index, length) {
     if (!Number.isInteger(index) || index < 0 || index >= length) throw new Error('Invalid policy choice.');
+  }
+
+  normalizeTableSeat(tableSeat) {
+    if (tableSeat === null || tableSeat === undefined || tableSeat === '') return null;
+    const seatNumber = typeof tableSeat === 'string' ? Number(tableSeat) : tableSeat;
+    if (!Number.isInteger(seatNumber) || seatNumber < 0 || seatNumber >= 10) {
+      throw new Error('Table seat must be between 0 and 9.');
+    }
+    return seatNumber;
+  }
+
+  isMark(player) {
+    return Boolean(player && player.name.trim().toLowerCase() === 'mark');
   }
 
   addLog(message) {

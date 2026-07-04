@@ -140,6 +140,80 @@ test('only mark can manually remove players', () => {
   assert.throws(() => game.removePlayerFrom('other-socket', mark.id), /Only mark/);
 });
 
+test('mark can assign table seats and public state exposes table order', () => {
+  const game = new Game();
+  const mark = game.addPlayer('mark-socket', 'mark');
+  const alice = game.addPlayer('alice-socket', 'Alice');
+  const bob = game.addPlayer('bob-socket', 'Bob');
+
+  game.setPlayerSeatFrom(mark.socketId, bob.id, '0');
+  game.setPlayerSeatFrom(mark.socketId, alice.id, 1);
+
+  const publicState = game.publicState();
+  const publicBob = publicState.players.find((player) => player.id === bob.id);
+  const publicAlice = publicState.players.find((player) => player.id === alice.id);
+  assert.equal(publicBob.tableSeat, 0);
+  assert.equal(publicAlice.tableSeat, 1);
+  assert.deepEqual(publicState.tableOrderIds.slice(0, 2), [bob.id, alice.id]);
+});
+
+test('only mark can assign table seats', () => {
+  const game = new Game();
+  game.addPlayer('mark-socket', 'mark');
+  const alice = game.addPlayer('alice-socket', 'Alice');
+
+  assert.throws(() => game.setPlayerSeatFrom(alice.socketId, alice.id, 0), /Only mark/);
+});
+
+test('table seats must be unique', () => {
+  const game = new Game();
+  const mark = game.addPlayer('mark-socket', 'mark');
+  const alice = game.addPlayer('alice-socket', 'Alice');
+  const bob = game.addPlayer('bob-socket', 'Bob');
+
+  game.setPlayerSeatFrom(mark.socketId, alice.id, 0);
+
+  assert.throws(() => game.setPlayerSeatFrom(mark.socketId, bob.id, 0), /already taken/);
+});
+
+test('president rotation follows table order when the game starts', () => {
+  const game = new Game();
+  const mark = game.addPlayer('mark-socket', 'mark');
+  const alice = game.addPlayer('alice-socket', 'Alice');
+  const bob = game.addPlayer('bob-socket', 'Bob');
+  const carol = game.addPlayer('carol-socket', 'Carol');
+  const dave = game.addPlayer('dave-socket', 'Dave');
+
+  game.setPlayerSeatFrom(mark.socketId, bob.id, 0);
+  game.setPlayerSeatFrom(mark.socketId, dave.id, 1);
+  game.setPlayerSeatFrom(mark.socketId, alice.id, 2);
+  game.setPlayerSeatFrom(mark.socketId, carol.id, 3);
+  game.setPlayerSeatFrom(mark.socketId, mark.id, 4);
+  game.startGame();
+
+  assert.equal(game.currentPresidentId, bob.id);
+  const nominee = game.getEligibleChancellors()[0];
+  game.nominateChancellor(bob.socketId, nominee.id);
+  for (const player of game.livingPlayers()) {
+    game.castVote(player.socketId, 'nein');
+  }
+
+  assert.equal(game.currentPresidentId, dave.id);
+});
+
+test('starting with table order requires every player to be seated', () => {
+  const game = new Game();
+  const mark = game.addPlayer('mark-socket', 'mark');
+  const alice = game.addPlayer('alice-socket', 'Alice');
+  game.addPlayer('bob-socket', 'Bob');
+  game.addPlayer('carol-socket', 'Carol');
+  game.addPlayer('dave-socket', 'Dave');
+
+  game.setPlayerSeatFrom(mark.socketId, alice.id, 0);
+
+  assert.throws(() => game.startGame(), /Seat every player/);
+});
+
 test('voting resolves once a non-president voter times out mid-vote', () => {
   const game = makeGame(5);
   game.startGame();

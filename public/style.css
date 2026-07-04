@@ -302,6 +302,14 @@ button:disabled {
   font-size: 12px;
 }
 
+.seat-select {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
 .tag {
   display: inline-block;
   margin-left: 6px;
@@ -321,6 +329,113 @@ button:disabled {
 .dead .player-details {
   text-decoration: line-through;
   color: #a39a90;
+}
+
+/* ---------- Table seating ring ---------- */
+
+.table-seating {
+  position: relative;
+  padding: clamp(46px, 6vw, 76px) clamp(38px, 5vw, 64px);
+}
+
+.table-seat {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 74px;
+  z-index: 5;
+}
+
+.seat-circle {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 15px;
+  color: #fff;
+  background: linear-gradient(160deg, #9c8f7d, #6b6058);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28), inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+  border: 2px solid #fff;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.seat-circle.seat-president {
+  background: linear-gradient(160deg, #e2483b, #921810);
+  transform: scale(1.12);
+}
+
+.seat-circle.seat-chancellor {
+  background: linear-gradient(160deg, #3f7fd6, #123a7c);
+  transform: scale(1.12);
+}
+
+.seat-circle.seat-dead {
+  background: #6b6058;
+  opacity: 0.45;
+  transform: none;
+}
+
+.seat-circle.seat-disconnected {
+  opacity: 0.55;
+  border-style: dashed;
+  border-color: var(--orange-dark);
+}
+
+.seat-name {
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--ink);
+  max-width: 74px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seat-tags {
+  display: flex;
+  gap: 3px;
+}
+
+.seat-tag {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 5px;
+  border-radius: 999px;
+  color: #fff;
+}
+
+.seat-tag.seat-tag-president {
+  background: #921810;
+}
+
+.seat-tag.seat-tag-chancellor {
+  background: #123a7c;
+}
+
+@media (max-width: 640px) {
+  .table-seating {
+    padding: clamp(38px, 9vw, 56px) clamp(28px, 8vw, 44px);
+  }
+
+  .seat-circle {
+    width: 36px;
+    height: 36px;
+    font-size: 12px;
+  }
+
+  .seat-name {
+    display: none;
+  }
 }
 
 /* ---------- Game board graphic ---------- */
