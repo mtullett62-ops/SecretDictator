@@ -162,7 +162,6 @@ function isDisconnected(id) {
 function renderPlayers() {
   playerList.innerHTML = '';
   const canRemovePlayers = isMark();
-  const canAssignSeats = isMark() && publicState.phase === 'lobby';
   for (const player of publicState.players) {
     const item = document.createElement('li');
     if (!player.alive) item.classList.add('dead');
@@ -176,10 +175,6 @@ function renderPlayers() {
     if (!player.alive) details.append(tag('Dead', true));
     if (!player.connected) details.append(tag('Disconnected', true));
     item.append(details);
-
-    if (canAssignSeats) {
-      item.append(seatSelect(player));
-    }
 
     if (canRemovePlayers && player.id !== privateState.id) {
       const button = document.createElement('button');
@@ -198,32 +193,12 @@ function renderPlayers() {
   }
 }
 
-function seatSelect(player) {
-  const select = document.createElement('select');
-  select.className = 'seat-select';
-  const unseated = document.createElement('option');
-  unseated.value = '';
-  unseated.textContent = 'Unseated';
-  select.append(unseated);
-  for (let seat = 0; seat < 10; seat += 1) {
-    const option = document.createElement('option');
-    option.value = String(seat);
-    option.textContent = `Seat ${seat + 1}`;
-    select.append(option);
-  }
-  select.value = typeof player.tableSeat === 'number' ? String(player.tableSeat) : '';
-  select.addEventListener('change', () => {
-    emit('setPlayerSeat', { playerId: player.id, tableSeat: select.value === '' ? null : Number(select.value) });
-  });
-  return select;
-}
-
 function renderTableSeating() {
-  tableSeating.querySelectorAll('.table-seat').forEach((el) => el.remove());
+  tableSeating.querySelectorAll('.table-seat, .seat-hint').forEach((el) => el.remove());
   if (!publicState) return;
-  const order = publicState.tableOrderIds
-    .map((id) => publicState.players.find((player) => player.id === id))
-    .filter(Boolean);
+  const order = publicState.tableOrderIds.filter((id) =>
+    publicState.players.some((player) => player.id === id)
+  );
   const count = order.length;
   if (!count) return;
 
@@ -233,12 +208,22 @@ function renderTableSeating() {
   const halfWidth = Math.max(rect.width / 2 - margin, 20);
   const halfHeight = Math.max(rect.height / 2 - margin, 20);
   const cornerRadius = Math.min(halfWidth, halfHeight) * 0.6;
+  const canDrag = isMark() && publicState.phase === 'lobby' && count > 1;
 
-  order.forEach((player, index) => {
+  if (canDrag) {
+    const hint = document.createElement('div');
+    hint.className = 'seat-hint';
+    hint.textContent = 'Drag players to set the table order';
+    tableSeating.append(hint);
+  }
+
+  order.forEach((playerId, index) => {
+    const player = publicState.players.find((candidate) => candidate.id === playerId);
     const { x, y } = roundedRectPerimeterPoint(halfWidth, halfHeight, cornerRadius, index / count);
 
     const seat = document.createElement('div');
     seat.className = 'table-seat';
+    seat.dataset.slotIndex = String(index);
     seat.style.left = `${rect.width / 2 + x}px`;
     seat.style.top = `${rect.height / 2 + y}px`;
 
@@ -250,6 +235,8 @@ function renderTableSeating() {
     if (!player.connected) circle.classList.add('seat-disconnected');
     circle.textContent = initials(player.name);
     seat.append(circle);
+
+    if (canDrag) attachSeatDrag(circle, index, order);
 
     if (player.isPresident || player.isChancellor) {
       const tags = document.createElement('div');
@@ -266,6 +253,70 @@ function renderTableSeating() {
 
     tableSeating.append(seat);
   });
+}
+
+// Drag-and-drop seat reordering: dragging one seat circle onto another swaps
+// their positions in the table order, then sends the full order to the
+// server. Uses Pointer Events (not HTML5 drag-and-drop) so the same code
+// works for mouse, touch, and pen without extra branching.
+function attachSeatDrag(circleEl, sourceIndex, order) {
+  circleEl.classList.add('seat-draggable');
+
+  circleEl.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    event.preventDefault();
+
+    const pointerId = event.pointerId;
+    circleEl.setPointerCapture(pointerId);
+    circleEl.classList.add('seat-dragging');
+
+    const ghost = circleEl.cloneNode(true);
+    ghost.classList.remove('seat-draggable');
+    ghost.classList.add('seat-ghost');
+    document.body.append(ghost);
+    positionGhost(ghost, event.clientX, event.clientY);
+
+    let hoveredSlot = null;
+
+    const onMove = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      positionGhost(ghost, moveEvent.clientX, moveEvent.clientY);
+      const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+      const slot = target && target.closest('.table-seat');
+      if (slot !== hoveredSlot) {
+        if (hoveredSlot) hoveredSlot.classList.remove('seat-drop-target');
+        hoveredSlot = slot;
+        if (hoveredSlot) hoveredSlot.classList.add('seat-drop-target');
+      }
+    };
+
+    const finish = (endEvent) => {
+      circleEl.releasePointerCapture(pointerId);
+      circleEl.classList.remove('seat-dragging');
+      ghost.remove();
+      if (hoveredSlot) hoveredSlot.classList.remove('seat-drop-target');
+      circleEl.removeEventListener('pointermove', onMove);
+      circleEl.removeEventListener('pointerup', finish);
+      circleEl.removeEventListener('pointercancel', finish);
+
+      if (endEvent.type !== 'pointerup' || !hoveredSlot) return;
+      const targetIndex = Number(hoveredSlot.dataset.slotIndex);
+      if (!Number.isInteger(targetIndex) || targetIndex === sourceIndex) return;
+
+      const nextOrder = order.slice();
+      [nextOrder[sourceIndex], nextOrder[targetIndex]] = [nextOrder[targetIndex], nextOrder[sourceIndex]];
+      emit('setTableOrder', { playerIds: nextOrder });
+    };
+
+    circleEl.addEventListener('pointermove', onMove);
+    circleEl.addEventListener('pointerup', finish);
+    circleEl.addEventListener('pointercancel', finish);
+  });
+}
+
+function positionGhost(ghost, clientX, clientY) {
+  ghost.style.left = `${clientX}px`;
+  ghost.style.top = `${clientY}px`;
 }
 
 // Places seats evenly by arc length (not angle) around a rounded-rectangle

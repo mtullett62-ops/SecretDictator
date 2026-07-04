@@ -302,14 +302,6 @@ button:disabled {
   font-size: 12px;
 }
 
-.seat-select {
-  flex: 0 0 auto;
-  min-height: 30px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  font-size: 12px;
-}
-
 .tag {
   display: inline-block;
   margin-left: 6px;
@@ -420,6 +412,46 @@ button:disabled {
 
 .seat-tag.seat-tag-chancellor {
   background: #123a7c;
+}
+
+.seat-hint {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(43, 36, 32, 0.85);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.seat-draggable {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.seat-dragging {
+  opacity: 0.35;
+}
+
+.seat-ghost {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1000;
+  cursor: grabbing;
+}
+
+.table-seat.seat-drop-target .seat-circle {
+  box-shadow: 0 0 0 4px var(--orange), 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 @media (max-width: 640px) {
