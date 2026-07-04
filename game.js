@@ -1,0 +1,573 @@
+const crypto = require('crypto');
+
+const ROLE_COUNTS = {
+  5: { liberal: 3, fascist: 1, hitler: 1 },
+  6: { liberal: 4, fascist: 1, hitler: 1 },
+  7: { liberal: 4, fascist: 2, hitler: 1 },
+  8: { liberal: 5, fascist: 2, hitler: 1 },
+  9: { liberal: 5, fascist: 3, hitler: 1 },
+  10: { liberal: 6, fascist: 3, hitler: 1 }
+};
+
+const FASCIST_POWERS = {
+  small: [null, null, 'policyPeek', 'execution', 'execution', null],
+  medium: [null, 'investigate', 'specialElection', 'execution', 'execution', null],
+  large: ['investigate', 'investigate', 'specialElection', 'execution', 'execution', null]
+};
+
+const PHASES = Object.freeze({
+  LOBBY: 'lobby',
+  NOMINATION: 'nomination',
+  VOTING: 'voting',
+  PRESIDENT_LEGISLATIVE: 'president_legislative',
+  CHANCELLOR_LEGISLATIVE: 'chancellor_legislative',
+  VETO_PENDING: 'veto_pending',
+  EXECUTIVE_ACTION: 'executive_action',
+  GAME_OVER: 'game_over'
+});
+
+class Game {
+  constructor() {
+    this.reset();
+  }
+
+  reset() {
+    this.players = [];
+    this.phase = PHASES.LOBBY;
+    this.log = [];
+    this.round = 0;
+    this.presidentCursor = -1;
+    this.normalPresidentCursor = -1;
+    this.specialPresidentId = null;
+    this.returnPresidentCursor = null;
+    this.currentPresidentId = null;
+    this.currentChancellorId = null;
+    this.previousPresidentId = null;
+    this.previousChancellorId = null;
+    this.votes = {};
+    this.lastVoteResult = null;
+    this.liberalPolicies = 0;
+    this.fascistPolicies = 0;
+    this.electionTracker = 0;
+    this.deck = [];
+    this.discard = [];
+    this.presidentHand = [];
+    this.chancellorHand = [];
+    this.pendingPower = null;
+    this.pendingPowerSource = null;
+    this.pendingVeto = false;
+    this.winner = null;
+    this.winReason = null;
+    this.addLog('Waiting for players.');
+  }
+
+  addPlayer(socketId, name) {
+    this.requirePhase(PHASES.LOBBY);
+    if (this.findPlayerBySocket(socketId)) throw new Error('You have already joined.');
+    if (this.players.length >= 10) throw new Error('The game is full.');
+    const cleanName = String(name || '').trim().slice(0, 24);
+    if (!cleanName) throw new Error('Enter a username.');
+    if (this.players.some((player) => player.name.toLowerCase() === cleanName.toLowerCase())) {
+      throw new Error('That username is already taken.');
+    }
+
+    const player = {
+      id: crypto.randomUUID(),
+      socketId,
+      name: cleanName,
+      role: null,
+      party: null,
+      alive: true,
+      connected: true
+    };
+    this.players.push(player);
+    this.addLog(`${player.name} joined.`);
+    return player;
+  }
+
+  removePlayer(socketId) {
+    const player = this.findPlayerBySocket(socketId);
+    if (!player) return;
+    if (this.phase === PHASES.LOBBY) {
+      this.players = this.players.filter((candidate) => candidate.id !== player.id);
+      this.addLog(`${player.name} left.`);
+      return;
+    }
+    player.connected = false;
+    this.addLog(`${player.name} disconnected.`);
+  }
+
+  startGame() {
+    this.requirePhase(PHASES.LOBBY);
+    if (!ROLE_COUNTS[this.players.length]) throw new Error('Start requires 5 to 10 players.');
+
+    const roles = this.shuffledRoles();
+    this.players = this.players.map((player, index) => {
+      const role = roles[index];
+      return {
+        ...player,
+        role,
+        party: role === 'liberal' ? 'liberal' : 'fascist',
+        alive: true,
+        connected: true
+      };
+    });
+
+    this.deck = shuffle([...Array(6).fill('liberal'), ...Array(11).fill('fascist')]);
+    this.discard = [];
+    this.phase = PHASES.NOMINATION;
+    this.presidentCursor = -1;
+    this.normalPresidentCursor = -1;
+    this.previousPresidentId = null;
+    this.previousChancellorId = null;
+    this.addLog('Game started.');
+    this.advancePresident();
+  }
+
+  nominateChancellor(socketId, nomineeId) {
+    this.requirePhase(PHASES.NOMINATION);
+    this.requireCurrentPresident(socketId);
+    if (!this.getEligibleChancellors().some((player) => player.id === nomineeId)) {
+      throw new Error('That player cannot be nominated.');
+    }
+    this.currentChancellorId = nomineeId;
+    this.votes = {};
+    this.lastVoteResult = null;
+    this.phase = PHASES.VOTING;
+    this.addLog(`${this.playerName(this.currentPresidentId)} nominated ${this.playerName(nomineeId)}.`);
+  }
+
+  castVote(socketId, vote) {
+    this.requirePhase(PHASES.VOTING);
+    const player = this.requireLivingPlayer(socketId);
+    if (vote !== 'ja' && vote !== 'nein') throw new Error('Vote must be Ja or Nein.');
+    this.votes[player.id] = vote;
+
+    const living = this.livingPlayers();
+    if (living.every((candidate) => this.votes[candidate.id])) {
+      this.resolveElection();
+    }
+  }
+
+  presidentDiscard(socketId, policyIndex) {
+    this.requirePhase(PHASES.PRESIDENT_LEGISLATIVE);
+    this.requireCurrentPresident(socketId);
+    this.assertIndex(policyIndex, this.presidentHand.length);
+    const [discarded] = this.presidentHand.splice(policyIndex, 1);
+    this.discard.push(discarded);
+    this.chancellorHand = this.presidentHand;
+    this.presidentHand = [];
+    this.phase = PHASES.CHANCELLOR_LEGISLATIVE;
+    this.addLog('President passed two policies to the Chancellor.');
+  }
+
+  chancellorChoose(socketId, payload) {
+    this.requirePhase(PHASES.CHANCELLOR_LEGISLATIVE);
+    this.requireCurrentChancellor(socketId);
+    if (payload && payload.veto) {
+      if (this.fascistPolicies < 5) throw new Error('Veto is not unlocked.');
+      this.pendingVeto = true;
+      this.phase = PHASES.VETO_PENDING;
+      this.addLog('Chancellor requested a veto.');
+      return;
+    }
+
+    const policyIndex = typeof payload === 'number' ? payload : payload.policyIndex;
+    this.assertIndex(policyIndex, this.chancellorHand.length);
+    const [enacted] = this.chancellorHand.splice(policyIndex, 1);
+    this.discard.push(...this.chancellorHand);
+    this.chancellorHand = [];
+    this.enactPolicy(enacted, true);
+  }
+
+  respondToVeto(socketId, accept) {
+    this.requirePhase(PHASES.VETO_PENDING);
+    this.requireCurrentPresident(socketId);
+    if (accept) {
+      this.discard.push(...this.chancellorHand);
+      this.chancellorHand = [];
+      this.pendingVeto = false;
+      this.addLog('Veto accepted. Both policies were discarded.');
+      this.failedGovernmentAfterVeto();
+      return;
+    }
+    this.pendingVeto = false;
+    this.phase = PHASES.CHANCELLOR_LEGISLATIVE;
+    this.addLog('Veto rejected. Chancellor must enact a policy.');
+  }
+
+  completeExecutiveAction(socketId, targetId) {
+    this.requirePhase(PHASES.EXECUTIVE_ACTION);
+    const president = this.requireCurrentPresident(socketId);
+    const target = this.players.find((player) => player.id === targetId);
+    if (!target || !target.alive || target.id === president.id) {
+      throw new Error('Choose a valid living target.');
+    }
+
+    if (this.pendingPower === 'investigate') {
+      this.pendingPowerSource = { type: 'investigation', presidentId: president.id, targetId: target.id };
+      this.addLog(`${president.name} investigated ${target.name}.`);
+      this.finishRound();
+      return;
+    }
+
+    if (this.pendingPower === 'specialElection') {
+      this.specialPresidentId = target.id;
+      this.returnPresidentCursor = this.normalPresidentCursor;
+      this.addLog(`${president.name} chose ${target.name} for a special election.`);
+      this.finishRound();
+      return;
+    }
+
+    if (this.pendingPower === 'execution') {
+      target.alive = false;
+      this.addLog(`${president.name} executed ${target.name}.`);
+      if (target.role === 'hitler') {
+        this.endGame('liberals', 'Hitler was executed.');
+        return;
+      }
+      this.finishRound();
+      return;
+    }
+
+    throw new Error('No executive action is pending.');
+  }
+
+  acknowledgePolicyPeek(socketId) {
+    this.requirePhase(PHASES.EXECUTIVE_ACTION);
+    this.requireCurrentPresident(socketId);
+    if (this.pendingPower !== 'policyPeek') throw new Error('Policy peek is not pending.');
+    this.addLog(`${this.playerName(this.currentPresidentId)} viewed the next three policies.`);
+    this.finishRound();
+  }
+
+  resolveElection() {
+    const living = this.livingPlayers();
+    const ja = living.filter((player) => this.votes[player.id] === 'ja').length;
+    const nein = living.length - ja;
+    const passed = ja > nein;
+    this.lastVoteResult = {
+      passed,
+      ja,
+      nein,
+      votes: living.map((player) => ({ playerId: player.id, vote: this.votes[player.id] }))
+    };
+    this.addLog(`Vote revealed: ${ja} Ja, ${nein} Nein. Government ${passed ? 'passed' : 'failed'}.`);
+
+    if (!passed) {
+      this.failGovernment();
+      return;
+    }
+
+    this.electionTracker = 0;
+    if (this.fascistPolicies >= 3 && this.getPlayer(this.currentChancellorId).role === 'hitler') {
+      this.endGame('fascists', 'Hitler was elected Chancellor after three Fascist policies.');
+      return;
+    }
+
+    this.previousPresidentId = this.currentPresidentId;
+    this.previousChancellorId = this.currentChancellorId;
+    this.drawPresidentPolicies();
+    this.phase = PHASES.PRESIDENT_LEGISLATIVE;
+  }
+
+  failGovernment() {
+    this.electionTracker += 1;
+    this.currentChancellorId = null;
+
+    if (this.electionTracker >= 3) {
+      const policy = this.drawPolicies(1)[0];
+      this.electionTracker = 0;
+      this.addLog(`Election tracker reached three. Top policy was enacted.`);
+      this.enactPolicy(policy, false);
+      return;
+    }
+
+    this.advancePresident();
+  }
+
+  failedGovernmentAfterVeto() {
+    this.electionTracker += 1;
+    this.currentChancellorId = null;
+    if (this.electionTracker >= 3) {
+      const policy = this.drawPolicies(1)[0];
+      this.electionTracker = 0;
+      this.addLog(`Election tracker reached three. Top policy was enacted.`);
+      this.enactPolicy(policy, false);
+      return;
+    }
+    this.finishRound();
+  }
+
+  enactPolicy(policy, triggerPower) {
+    if (policy === 'liberal') {
+      this.liberalPolicies += 1;
+      this.addLog('A Liberal policy was enacted.');
+      if (this.liberalPolicies >= 5) {
+        this.endGame('liberals', 'Five Liberal policies were enacted.');
+        return;
+      }
+      this.finishRound();
+      return;
+    }
+
+    this.fascistPolicies += 1;
+    this.addLog('A Fascist policy was enacted.');
+    if (this.fascistPolicies >= 6) {
+      this.endGame('fascists', 'Six Fascist policies were enacted.');
+      return;
+    }
+
+    const power = triggerPower ? this.powerForFascistPolicy(this.fascistPolicies) : null;
+    if (power) {
+      this.pendingPower = power;
+      this.phase = PHASES.EXECUTIVE_ACTION;
+      this.addLog(`Executive action: ${formatPower(power)}.`);
+      return;
+    }
+    this.finishRound();
+  }
+
+  finishRound() {
+    this.pendingPower = null;
+    this.currentChancellorId = null;
+    this.votes = {};
+    this.presidentHand = [];
+    this.chancellorHand = [];
+    if (this.phase !== PHASES.GAME_OVER) this.advancePresident();
+  }
+
+  advancePresident() {
+    this.phase = PHASES.NOMINATION;
+
+    if (this.specialPresidentId) {
+      this.currentPresidentId = this.specialPresidentId;
+      this.specialPresidentId = null;
+      this.presidentCursor = this.players.findIndex((player) => player.id === this.currentPresidentId);
+      this.addLog(`${this.playerName(this.currentPresidentId)} is President by special election.`);
+      return;
+    }
+
+    if (this.returnPresidentCursor !== null) {
+      this.normalPresidentCursor = this.returnPresidentCursor;
+      this.returnPresidentCursor = null;
+    }
+
+    const nextCursor = this.nextLivingCursor(this.normalPresidentCursor);
+    this.normalPresidentCursor = nextCursor;
+    this.presidentCursor = nextCursor;
+    this.currentPresidentId = this.players[nextCursor].id;
+    this.round += 1;
+    this.addLog(`${this.playerName(this.currentPresidentId)} is President.`);
+  }
+
+  nextLivingCursor(fromCursor) {
+    if (!this.livingPlayers().length) throw new Error('No living players remain.');
+    let cursor = fromCursor;
+    for (let i = 0; i < this.players.length; i += 1) {
+      cursor = (cursor + 1 + this.players.length) % this.players.length;
+      if (this.players[cursor].alive) return cursor;
+    }
+    throw new Error('No living players remain.');
+  }
+
+  drawPresidentPolicies() {
+    this.presidentHand = this.drawPolicies(3);
+  }
+
+  drawPolicies(count) {
+    this.refillDeckIfNeeded(count);
+    return this.deck.splice(0, count);
+  }
+
+  refillDeckIfNeeded(count) {
+    if (this.deck.length >= count) return;
+    this.deck = this.deck.concat(shuffle(this.discard));
+    this.discard = [];
+    if (this.deck.length < count) throw new Error('Policy deck is unexpectedly empty.');
+  }
+
+  shuffledRoles() {
+    const counts = ROLE_COUNTS[this.players.length];
+    return shuffle([
+      ...Array(counts.liberal).fill('liberal'),
+      ...Array(counts.fascist).fill('fascist'),
+      ...Array(counts.hitler).fill('hitler')
+    ]);
+  }
+
+  powerForFascistPolicy(position) {
+    const count = this.players.length;
+    const track = count <= 6 ? FASCIST_POWERS.small : count <= 8 ? FASCIST_POWERS.medium : FASCIST_POWERS.large;
+    return track[position - 1];
+  }
+
+  getEligibleChancellors() {
+    const living = this.livingPlayers();
+    return living.filter((player) => {
+      if (player.id === this.currentPresidentId) return false;
+      return player.id !== this.previousPresidentId && player.id !== this.previousChancellorId;
+    });
+  }
+
+  publicState() {
+    return {
+      phase: this.phase,
+      players: this.players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        alive: player.alive,
+        connected: player.connected,
+        isPresident: player.id === this.currentPresidentId,
+        isChancellor: player.id === this.currentChancellorId,
+        isTermLimited: this.isTermLimited(player.id)
+      })),
+      currentPresidentId: this.currentPresidentId,
+      currentChancellorId: this.currentChancellorId,
+      eligibleChancellorIds: this.getEligibleChancellors().map((player) => player.id),
+      liberalPolicies: this.liberalPolicies,
+      fascistPolicies: this.fascistPolicies,
+      electionTracker: this.electionTracker,
+      round: this.round,
+      lastVoteResult: this.lastVoteResult,
+      pendingPower: this.pendingPower,
+      vetoUnlocked: this.fascistPolicies >= 5,
+      winner: this.winner,
+      winReason: this.winReason,
+      log: this.log.slice(-80)
+    };
+  }
+
+  privateStateFor(socketId) {
+    const player = this.findPlayerBySocket(socketId);
+    if (!player) return null;
+    const visiblePlayers = this.roleVisibilityFor(player);
+    const state = {
+      id: player.id,
+      name: player.name,
+      role: player.role,
+      party: player.party,
+      alive: player.alive,
+      isPresident: player.id === this.currentPresidentId,
+      isChancellor: player.id === this.currentChancellorId,
+      isTermLimited: this.isTermLimited(player.id),
+      visibleRoles: visiblePlayers
+    };
+
+    if (this.phase === PHASES.PRESIDENT_LEGISLATIVE && player.id === this.currentPresidentId) {
+      state.presidentPolicies = [...this.presidentHand];
+    }
+    if ((this.phase === PHASES.CHANCELLOR_LEGISLATIVE || this.phase === PHASES.VETO_PENDING) && player.id === this.currentChancellorId) {
+      state.chancellorPolicies = [...this.chancellorHand];
+    }
+    if (this.phase === PHASES.EXECUTIVE_ACTION && player.id === this.currentPresidentId && this.pendingPower === 'policyPeek') {
+      this.refillDeckIfNeeded(Math.min(3, this.deck.length + this.discard.length));
+      state.policyPeek = this.deck.slice(0, 3);
+    }
+    if (this.pendingPowerSource && this.pendingPowerSource.type === 'investigation' && this.pendingPowerSource.presidentId === player.id) {
+      const target = this.getPlayer(this.pendingPowerSource.targetId);
+      state.investigationResult = {
+        playerId: target.id,
+        name: target.name,
+        party: target.party
+      };
+    }
+    return state;
+  }
+
+  roleVisibilityFor(viewer) {
+    if (this.phase === PHASES.LOBBY || !viewer.role) return [];
+    const fascists = this.players.filter((player) => player.party === 'fascist');
+    if (this.players.length <= 6 && viewer.party === 'fascist') {
+      return fascists
+        .filter((player) => player.id !== viewer.id)
+        .map((player) => ({ playerId: player.id, name: player.name, role: player.role, party: player.party }));
+    }
+    if (this.players.length >= 7 && viewer.role === 'fascist') {
+      return fascists
+        .filter((player) => player.id !== viewer.id)
+        .map((player) => ({ playerId: player.id, name: player.name, role: player.role, party: player.party }));
+    }
+    return [];
+  }
+
+  isTermLimited(playerId) {
+    return playerId === this.previousPresidentId || playerId === this.previousChancellorId;
+  }
+
+  endGame(winner, reason) {
+    this.winner = winner;
+    this.winReason = reason;
+    this.phase = PHASES.GAME_OVER;
+    this.addLog(`${winner === 'liberals' ? 'Liberals' : 'Fascists'} win: ${reason}`);
+  }
+
+  requirePhase(phase) {
+    if (this.phase !== phase) throw new Error(`Invalid action during ${this.phase}.`);
+  }
+
+  requireCurrentPresident(socketId) {
+    const player = this.requireLivingPlayer(socketId);
+    if (player.id !== this.currentPresidentId) throw new Error('Only the President can do that.');
+    return player;
+  }
+
+  requireCurrentChancellor(socketId) {
+    const player = this.requireLivingPlayer(socketId);
+    if (player.id !== this.currentChancellorId) throw new Error('Only the Chancellor can do that.');
+    return player;
+  }
+
+  requireLivingPlayer(socketId) {
+    const player = this.findPlayerBySocket(socketId);
+    if (!player) throw new Error('Join the game first.');
+    if (!player.alive) throw new Error('Dead players cannot do that.');
+    return player;
+  }
+
+  findPlayerBySocket(socketId) {
+    return this.players.find((player) => player.socketId === socketId);
+  }
+
+  getPlayer(playerId) {
+    const player = this.players.find((candidate) => candidate.id === playerId);
+    if (!player) throw new Error('Unknown player.');
+    return player;
+  }
+
+  livingPlayers() {
+    return this.players.filter((player) => player.alive);
+  }
+
+  playerName(playerId) {
+    return this.getPlayer(playerId).name;
+  }
+
+  assertIndex(index, length) {
+    if (!Number.isInteger(index) || index < 0 || index >= length) throw new Error('Invalid policy choice.');
+  }
+
+  addLog(message) {
+    this.log.push({ at: new Date().toISOString(), message });
+  }
+}
+
+function shuffle(items) {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = crypto.randomInt(index + 1);
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+  return copy;
+}
+
+function formatPower(power) {
+  return {
+    investigate: 'Investigate Loyalty',
+    policyPeek: 'Policy Peek',
+    specialElection: 'Special Election',
+    execution: 'Execution'
+  }[power] || power;
+}
+
+module.exports = { Game, PHASES, ROLE_COUNTS };

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SecretDictator</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>SecretDictator</h1>
+        <p>One shared game. Server-authoritative. Refreshing does not reconnect you.</p>
+      </header>
+
+      <section id="joinPanel" class="panel">
+        <h2>Join</h2>
+        <div class="row">
+          <input id="nameInput" maxlength="24" placeholder="Username" autocomplete="off">
+          <button id="joinButton">Join</button>
+          <button id="startButton">Start Game</button>
+        </div>
+        <p id="error" class="error"></p>
+      </section>
+
+      <section id="statusPanel" class="panel">
+        <h2>Current Phase</h2>
+        <p id="phaseText"></p>
+        <p id="governmentText"></p>
+        <p id="winnerText"></p>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>Player List</h2>
+          <ul id="playerList"></ul>
+        </article>
+
+        <article class="panel">
+          <h2>Board</h2>
+          <div class="track">
+            <strong>Liberal Track</strong>
+            <div id="liberalTrack" class="boxes five"></div>
+          </div>
+          <div class="track">
+            <strong>Fascist Track</strong>
+            <div id="fascistTrack" class="boxes six"></div>
+          </div>
+          <div class="track">
+            <strong>Election Tracker</strong>
+            <div id="electionTrack" class="circles"></div>
+          </div>
+        </article>
+      </section>
+
+      <section id="actionsPanel" class="panel">
+        <h2>Actions</h2>
+        <div id="actions"></div>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>Personal Information</h2>
+          <div id="personal"></div>
+        </article>
+
+        <article class="panel">
+          <h2>Game Log</h2>
+          <ol id="log"></ol>
+        </article>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
