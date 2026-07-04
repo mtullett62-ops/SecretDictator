@@ -43,7 +43,11 @@ const fascistPowerRow = document.getElementById('fascistPowerRow');
 const electionTrack = document.getElementById('electionTrack');
 const actions = document.getElementById('actions');
 const personal = document.getElementById('personal');
-const log = document.getElementById('log');
+const eventToast = document.getElementById('eventToast');
+
+let lastToastKey = null;
+let hasRenderedInitialLog = false;
+let toastTimer = null;
 
 joinButton.addEventListener('click', () => emit('joinGame', nameInput.value));
 nameInput.addEventListener('keydown', (event) => {
@@ -90,7 +94,7 @@ function render() {
   renderBoard();
   renderPersonal();
   renderActions();
-  renderLog();
+  renderEventToast();
 }
 
 function renderJoin() {
@@ -327,13 +331,25 @@ function renderExecutiveAction() {
   actions.append(select, button);
 }
 
-function renderLog() {
-  log.innerHTML = '';
-  for (const entry of publicState.log.slice().reverse()) {
-    const item = document.createElement('li');
-    item.textContent = entry.message;
-    log.append(item);
+function renderEventToast() {
+  if (!publicState.log.length) return;
+
+  const latest = publicState.log[publicState.log.length - 1];
+  const key = `${latest.at}:${latest.message}`;
+  if (key === lastToastKey) return;
+
+  lastToastKey = key;
+  if (!hasRenderedInitialLog) {
+    hasRenderedInitialLog = true;
+    return;
   }
+
+  eventToast.textContent = latest.message;
+  eventToast.classList.add('show');
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    eventToast.classList.remove('show');
+  }, 2800);
 }
 
 function renderPolicyButtons(policies, onClick, verb) {

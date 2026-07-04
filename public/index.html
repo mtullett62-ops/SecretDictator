@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="/style.css">
   </head>
   <body>
+    <div id="eventToast" class="event-toast" aria-live="polite" aria-atomic="true"></div>
+
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark">SD</span>
@@ -49,7 +51,7 @@
       </section>
 
       <div class="table-layout">
-        <aside class="side-column">
+        <aside class="side-column player-column">
           <article class="panel">
             <h2>Players</h2>
             <ul id="playerList"></ul>
@@ -89,12 +91,6 @@
           </article>
         </div>
 
-        <aside class="side-column">
-          <article class="panel log-panel">
-            <h2>Game Log</h2>
-            <ol id="log"></ol>
-          </article>
-        </aside>
       </div>
     </main>
 
