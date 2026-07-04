@@ -214,6 +214,46 @@ test('starting with table order requires every player to be seated', () => {
   assert.throws(() => game.startGame(), /Seat every player/);
 });
 
+test('mark can set the full table order in one update', () => {
+  const game = new Game();
+  const mark = game.addPlayer('mark-socket', 'mark');
+  const alice = game.addPlayer('alice-socket', 'Alice');
+  const bob = game.addPlayer('bob-socket', 'Bob');
+  const carol = game.addPlayer('carol-socket', 'Carol');
+  const dave = game.addPlayer('dave-socket', 'Dave');
+
+  game.setTableOrderFrom(mark.socketId, [carol.id, alice.id, mark.id, dave.id, bob.id]);
+
+  assert.deepEqual(game.publicState().tableOrderIds, [carol.id, alice.id, mark.id, dave.id, bob.id]);
+  assert.deepEqual(
+    [carol, alice, mark, dave, bob].map((player) => game.getPlayer(player.id).tableSeat),
+    [0, 1, 2, 3, 4]
+  );
+});
+
+test('only mark can set the full table order', () => {
+  const game = new Game();
+  game.addPlayer('mark-socket', 'mark');
+  const alice = game.addPlayer('alice-socket', 'Alice');
+
+  assert.throws(() => game.setTableOrderFrom(alice.socketId, game.players.map((player) => player.id)), /Only mark/);
+});
+
+test('table order update must include every player exactly once', () => {
+  const game = new Game();
+  const mark = game.addPlayer('mark-socket', 'mark');
+  const alice = game.addPlayer('alice-socket', 'Alice');
+  const bob = game.addPlayer('bob-socket', 'Bob');
+
+  assert.throws(() => game.setTableOrderFrom(mark.socketId, [mark.id, alice.id]), /include every player/);
+  assert.throws(() => game.setTableOrderFrom(mark.socketId, [mark.id, alice.id, alice.id]), /duplicate/);
+  assert.throws(() => game.setTableOrderFrom(mark.socketId, [mark.id, alice.id, 'missing-player']), /Unknown player/);
+  assert.deepEqual(
+    [mark, alice, bob].map((player) => game.getPlayer(player.id).tableSeat),
+    [null, null, null]
+  );
+});
+
 test('voting resolves once a non-president voter times out mid-vote', () => {
   const game = makeGame(5);
   game.startGame();

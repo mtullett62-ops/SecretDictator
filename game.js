@@ -147,11 +147,7 @@ class Game {
   }
 
   setPlayerSeatFrom(requesterSocketId, targetPlayerId, tableSeat) {
-    this.requirePhase(PHASES.LOBBY);
-    const requester = this.findPlayerBySocket(requesterSocketId);
-    if (!this.isMark(requester)) {
-      throw new Error('Only mark can set table seats.');
-    }
+    this.requireMarkLobbyAction(requesterSocketId, 'set table seats');
 
     const target = this.getPlayer(targetPlayerId);
     const cleanSeat = this.normalizeTableSeat(tableSeat);
@@ -164,6 +160,26 @@ class Game {
 
     target.tableSeat = cleanSeat;
     this.addLog(`${target.name} was seated${cleanSeat === null ? '' : ` at table position ${cleanSeat + 1}`}.`);
+  }
+
+  setTableOrderFrom(requesterSocketId, playerIds) {
+    this.requireMarkLobbyAction(requesterSocketId, 'set table order');
+    if (!Array.isArray(playerIds)) throw new Error('Table order must be a list of player ids.');
+    if (playerIds.length !== this.players.length) {
+      throw new Error('Table order must include every player exactly once.');
+    }
+
+    const seen = new Set();
+    const orderedPlayers = playerIds.map((playerId) => {
+      if (seen.has(playerId)) throw new Error('Table order cannot contain duplicate players.');
+      seen.add(playerId);
+      return this.getPlayer(playerId);
+    });
+
+    for (let index = 0; index < orderedPlayers.length; index += 1) {
+      orderedPlayers[index].tableSeat = index;
+    }
+    this.addLog('Table order was updated by mark.');
   }
 
   removePlayerById(playerId, logMessage) {
@@ -706,6 +722,15 @@ class Game {
       throw new Error('Table seat must be between 0 and 9.');
     }
     return seatNumber;
+  }
+
+  requireMarkLobbyAction(socketId, action) {
+    this.requirePhase(PHASES.LOBBY);
+    const requester = this.findPlayerBySocket(socketId);
+    if (!this.isMark(requester)) {
+      throw new Error(`Only mark can ${action}.`);
+    }
+    return requester;
   }
 
   isMark(player) {

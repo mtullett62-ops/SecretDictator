@@ -34,6 +34,9 @@ io.on('connection', (socket) => {
   socket.on('setPlayerSeat', (payload, reply) => handle(socket, reply, () => {
     game.setPlayerSeatFrom(socket.id, payload && payload.playerId, payload && payload.tableSeat);
   }));
+  socket.on('setTableOrder', (payload, reply) => handle(socket, reply, () => {
+    game.setTableOrderFrom(socket.id, payload && payload.playerIds);
+  }));
   socket.on('startGame', (_payload, reply) => handle(socket, reply, () => game.startGame()));
   socket.on('resetGame', (_payload, reply) => handle(socket, reply, () => game.resetGameFrom(socket.id)));
   socket.on('nominateChancellor', (playerId, reply) => handle(socket, reply, () => game.nominateChancellor(socket.id, playerId)));
