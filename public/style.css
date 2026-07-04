@@ -375,7 +375,9 @@ button:disabled {
 
 .seat-tags {
   display: flex;
+  flex-wrap: wrap;
   gap: 3px;
+  justify-content: center;
 }
 
 .seat-tag {
@@ -386,6 +388,7 @@ button:disabled {
   padding: 1px 5px;
   border-radius: 999px;
   color: #fff;
+  white-space: nowrap;
 }
 
 .seat-tag.seat-tag-president {
@@ -394,6 +397,10 @@ button:disabled {
 
 .seat-tag.seat-tag-chancellor {
   background: #123a7c;
+}
+
+.seat-tag.seat-tag-term {
+  background: #6b6058;
 }
 
 .seat-hint {

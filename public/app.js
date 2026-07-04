@@ -35,6 +35,7 @@ const errorEl = document.getElementById('error');
 const connectionStatus = document.getElementById('connectionStatus');
 const winnerText = document.getElementById('winnerText');
 const pauseNotice = document.getElementById('pauseNotice');
+const playerPanel = document.getElementById('playerPanel');
 const playerList = document.getElementById('playerList');
 const tableSeating = document.getElementById('tableSeating');
 const liberalTrack = document.getElementById('liberalTrack');
@@ -152,8 +153,13 @@ function isDisconnected(id) {
 }
 
 function renderPlayers() {
+  playerPanel.style.display = isMark() ? '' : 'none';
+  if (!isMark()) {
+    playerList.innerHTML = '';
+    return;
+  }
+
   playerList.innerHTML = '';
-  const canRemovePlayers = isMark();
   for (const player of publicState.players) {
     const item = document.createElement('li');
     if (!player.alive) item.classList.add('dead');
@@ -168,7 +174,7 @@ function renderPlayers() {
     if (!player.connected) details.append(tag('Disconnected', true));
     item.append(details);
 
-    if (canRemovePlayers && player.id !== privateState.id) {
+    if (player.id !== privateState.id) {
       const button = document.createElement('button');
       button.className = 'player-remove';
       button.type = 'button';
@@ -230,11 +236,12 @@ function renderTableSeating() {
 
     if (canDrag) attachSeatDrag(circle, index, order);
 
-    if (player.isPresident || player.isChancellor) {
+    if (player.isPresident || player.isChancellor || player.isTermLimited) {
       const tags = document.createElement('div');
       tags.className = 'seat-tags';
       if (player.isPresident) tags.append(seatTag('President', 'president'));
       if (player.isChancellor) tags.append(seatTag('Chancellor', 'chancellor'));
+      if (player.isTermLimited) tags.append(seatTag('Term limited', 'term'));
       seat.append(tags);
     }
 
