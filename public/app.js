@@ -182,48 +182,87 @@ function renderPersonal() {
     return;
   }
   personal.innerHTML = '';
-  const list = document.createElement('dl');
-  const rows = [
-    ['Username', privateState.name],
-    ['Role', privateState.role || 'Not assigned'],
-    ['Party', privateState.party || 'Not assigned'],
-    ['Status', privateState.alive ? 'Alive' : 'Dead'],
-    ['President', privateState.isPresident ? 'Yes' : 'No'],
-    ['Chancellor', privateState.isChancellor ? 'Yes' : 'No'],
-    ['Term limited', privateState.isTermLimited ? 'Yes' : 'No']
-  ];
-  for (const [term, value] of rows) {
-    const dt = document.createElement('dt');
-    const dd = document.createElement('dd');
-    dt.textContent = term;
-    dd.textContent = value;
-    list.append(dt, dd);
-  }
-  personal.append(list);
+  personal.append(renderIdentityCard(privateState));
 
   if (privateState.visibleRoles && privateState.visibleRoles.length) {
-    const title = document.createElement('p');
-    const label = document.createElement('strong');
-    label.textContent = 'Known fascists: ';
-    title.append(label);
-    title.append(privateState.visibleRoles.map((player) => `${player.name} (${player.role})`).join(', '));
-    personal.append(title);
+    const chips = document.createElement('div');
+    chips.className = 'chip-row';
+    for (const player of privateState.visibleRoles) {
+      const chip = document.createElement('span');
+      chip.className = `chip chip-${player.role === 'hitler' ? 'hitler' : 'fascist'}`;
+      chip.textContent = `${roleIcon(player.role)} ${player.name}`;
+      chips.append(chip);
+    }
+    personal.append(infoSection('Known fascists', chips));
   }
 
   if (privateState.investigationResult) {
-    const result = document.createElement('p');
-    const label = document.createElement('strong');
-    label.textContent = 'Investigation result: ';
-    result.append(
-      label,
-      `${privateState.investigationResult.name} is ${privateState.investigationResult.party}.`
-    );
-    personal.append(result);
+    const chip = document.createElement('span');
+    chip.className = `chip chip-${privateState.investigationResult.party}`;
+    chip.textContent = `${partyIcon(privateState.investigationResult.party)} ${privateState.investigationResult.name} is ${capitalize(privateState.investigationResult.party)}`;
+    personal.append(infoSection('Investigation result', chip));
   }
 
   if (privateState.policyPeek) {
-    personal.append(renderPolicyList(privateState.policyPeek));
+    personal.append(infoSection('Next three policies', renderPolicyList(privateState.policyPeek)));
   }
+}
+
+function renderIdentityCard(state) {
+  const card = document.createElement('div');
+  card.className = 'identity-card';
+
+  const avatar = document.createElement('div');
+  avatar.className = `identity-avatar avatar-${state.role || 'unknown'}`;
+  avatar.textContent = roleIcon(state.role);
+  card.append(avatar);
+
+  const name = document.createElement('div');
+  name.className = 'identity-name';
+  name.textContent = state.name;
+  card.append(name);
+
+  if (state.party) {
+    const party = document.createElement('span');
+    party.className = `identity-party party-${state.party}`;
+    party.textContent = capitalize(state.party);
+    card.append(party);
+  }
+
+  const badges = document.createElement('div');
+  badges.className = 'identity-badges';
+  badges.append(statusBadge(state.alive ? 'alive' : 'dead', state.alive ? '❤️ Alive' : '💀 Dead'));
+  if (state.isPresident) badges.append(statusBadge('president', '👑 President'));
+  if (state.isChancellor) badges.append(statusBadge('chancellor', '🎗️ Chancellor'));
+  if (state.isTermLimited) badges.append(statusBadge('term', '⏳ Term limited'));
+  card.append(badges);
+
+  return card;
+}
+
+function infoSection(labelText, content) {
+  const section = document.createElement('div');
+  section.className = 'info-section';
+  const label = document.createElement('div');
+  label.className = 'info-section-label';
+  label.textContent = labelText;
+  section.append(label, content);
+  return section;
+}
+
+function statusBadge(kind, label) {
+  const span = document.createElement('span');
+  span.className = `status-badge status-badge-${kind}`;
+  span.textContent = label;
+  return span;
+}
+
+function roleIcon(role) {
+  return { liberal: '🕊️', fascist: '🔥', hitler: '🎩' }[role] || '❔';
+}
+
+function partyIcon(party) {
+  return party === 'fascist' ? '🔥' : '🕊️';
 }
 
 function renderActions() {

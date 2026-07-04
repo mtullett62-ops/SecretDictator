@@ -454,6 +454,38 @@ button:disabled {
   min-height: 90px;
 }
 
+#actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+}
+
+#actions button,
+#actions select {
+  min-height: 60px;
+  font-size: 18px;
+  padding: 14px 28px;
+  border-radius: 12px;
+}
+
+#actions button {
+  min-width: 150px;
+  font-weight: 800;
+  box-shadow: 0 4px 10px rgba(60, 30, 0, 0.15);
+}
+
+#actions button.policy {
+  min-width: 170px;
+  min-height: 96px;
+  font-size: 17px;
+}
+
+#actions select {
+  flex: 1 1 220px;
+  font-weight: 600;
+}
+
 .policyList {
   display: flex;
   flex-wrap: wrap;
@@ -479,21 +511,143 @@ button:disabled {
   background: linear-gradient(160deg, #d0604a, #8c2a20);
 }
 
-dl {
+/* ---------- Identity card ---------- */
+
+.identity-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 6px 4px 4px;
+}
+
+.identity-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
   display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: 8px 10px;
-  margin: 0;
-  font-size: 14px;
+  place-items: center;
+  font-size: 34px;
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.4), 0 3px 8px rgba(0, 0, 0, 0.2);
 }
 
-dt {
+.avatar-liberal {
+  background: linear-gradient(160deg, #4f8fe0, #1f4f95);
+}
+
+.avatar-fascist {
+  background: linear-gradient(160deg, #d0604a, #7c211a);
+}
+
+.avatar-hitler {
+  background: linear-gradient(160deg, #4a4038, #17130f);
+}
+
+.avatar-unknown {
+  background: linear-gradient(160deg, #cfc6ba, #a89d8e);
+}
+
+.identity-name {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.identity-party {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 12px;
   font-weight: 700;
-  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fff;
 }
 
-dd {
-  margin: 0;
+.party-liberal {
+  background: #2a5fa8;
+}
+
+.party-fascist {
+  background: #8c2a20;
+}
+
+.identity-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.status-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--orange-tint);
+  color: var(--ink);
+  border: 1px solid var(--orange-light);
+}
+
+.status-badge-dead {
+  background: #f1e6e2;
+  color: #7a2f27;
+  border-color: #e3c6bd;
+}
+
+.status-badge-president,
+.status-badge-chancellor {
+  background: var(--orange);
+  color: #fff;
+  border-color: var(--orange-dark);
+}
+
+.status-badge-term {
+  background: #eee6da;
+  color: var(--ink-soft);
+  border-color: #dcd0bf;
+}
+
+.info-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--card-border);
+}
+
+.info-section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.chip-liberal {
+  background: linear-gradient(160deg, #4f8fe0, #2a5fa8);
+}
+
+.chip-fascist,
+.chip-hitler {
+  background: linear-gradient(160deg, #d0604a, #8c2a20);
 }
 
 /* ---------- Responsive ---------- */
@@ -604,7 +758,19 @@ dd {
     display: none;
   }
 
-  dl {
-    grid-template-columns: 104px 1fr;
+  #actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #actions button,
+  #actions select {
+    width: 100%;
+    min-height: 64px;
+    font-size: 19px;
+  }
+
+  #actions button.policy {
+    min-height: 100px;
   }
 }
