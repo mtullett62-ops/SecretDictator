@@ -486,6 +486,17 @@ button:disabled {
   font-weight: 600;
 }
 
+.vote-buttons {
+  display: flex;
+  gap: 14px;
+  width: 100%;
+}
+
+.vote-buttons button {
+  flex: 1;
+  min-width: 0;
+}
+
 .policyList {
   display: flex;
   flex-wrap: wrap;

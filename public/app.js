@@ -48,6 +48,7 @@ const eventToast = document.getElementById('eventToast');
 let lastToastKey = null;
 let hasRenderedInitialLog = false;
 let toastTimer = null;
+let votedKey = null;
 
 joinButton.addEventListener('click', () => emit('joinGame', nameInput.value));
 nameInput.addEventListener('keydown', (event) => {
@@ -79,10 +80,13 @@ socket.on('errorMessage', (message) => {
   errorEl.textContent = message;
 });
 
-function emit(eventName, payload) {
+function emit(eventName, payload, onError) {
   errorEl.textContent = '';
   socket.emit(eventName, payload, (reply) => {
-    if (reply && !reply.ok) errorEl.textContent = reply.error;
+    if (reply && !reply.ok) {
+      errorEl.textContent = reply.error;
+      if (onError) onError();
+    }
   });
 }
 
@@ -306,14 +310,38 @@ function renderNomination() {
 }
 
 function renderVoting() {
+  if (votedKey === currentVoteKey()) {
+    actions.append(text('Vote submitted. Waiting for the other players…'));
+    return;
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'vote-buttons';
   const ja = document.createElement('button');
   const nein = document.createElement('button');
   ja.textContent = 'Ja';
   nein.textContent = 'Nein';
   nein.className = 'secondary';
-  ja.addEventListener('click', () => emit('castVote', 'ja'));
-  nein.addEventListener('click', () => emit('castVote', 'nein'));
-  actions.append(ja, nein);
+  ja.addEventListener('click', () => castVote('ja'));
+  nein.addEventListener('click', () => castVote('nein'));
+  wrapper.append(ja, nein);
+  actions.append(wrapper);
+}
+
+function castVote(vote) {
+  const key = currentVoteKey();
+  votedKey = key;
+  render();
+  emit('castVote', vote, () => {
+    if (votedKey === key) {
+      votedKey = null;
+      render();
+    }
+  });
+}
+
+function currentVoteKey() {
+  return `${publicState.currentPresidentId}:${publicState.currentChancellorId}:${publicState.electionTracker}`;
 }
 
 function renderPresidentLegislative() {
