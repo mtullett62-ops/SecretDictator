@@ -33,10 +33,6 @@ const joinButton = document.getElementById('joinButton');
 const startButton = document.getElementById('startButton');
 const errorEl = document.getElementById('error');
 const connectionStatus = document.getElementById('connectionStatus');
-const phaseText = document.getElementById('phaseText');
-const presidentText = document.getElementById('presidentText');
-const chancellorText = document.getElementById('chancellorText');
-const playerCountText = document.getElementById('playerCountText');
 const winnerText = document.getElementById('winnerText');
 const pauseNotice = document.getElementById('pauseNotice');
 const playerList = document.getElementById('playerList');
@@ -119,7 +115,7 @@ function emit(eventName, payload, onError, onSuccess) {
 function render() {
   if (!publicState) return;
   renderJoin();
-  renderStatus();
+  renderWinner();
   renderPauseNotice();
   renderPlayers();
   renderBoard();
@@ -137,11 +133,7 @@ function renderJoin() {
   startButton.disabled = publicState.players.length < 5 || publicState.players.length > 10;
 }
 
-function renderStatus() {
-  phaseText.textContent = labelPhase(publicState.phase);
-  presidentText.textContent = playerName(publicState.currentPresidentId) || '—';
-  chancellorText.textContent = playerName(publicState.currentChancellorId) || '—';
-  playerCountText.textContent = publicState.players.length;
+function renderWinner() {
   winnerText.textContent = publicState.winner ? `${capitalize(publicState.winner)} win. ${publicState.winReason}` : '';
 }
 
@@ -737,19 +729,6 @@ function text(value) {
   const paragraph = document.createElement('p');
   paragraph.textContent = value;
   return paragraph;
-}
-
-function labelPhase(phase) {
-  return {
-    lobby: 'Lobby',
-    nomination: 'Nomination',
-    voting: 'Voting',
-    president_legislative: 'President legislative session',
-    chancellor_legislative: 'Chancellor legislative session',
-    veto_pending: 'Veto pending',
-    executive_action: 'Executive action',
-    game_over: 'Game over'
-  }[phase] || phase;
 }
 
 function capitalize(value) {
