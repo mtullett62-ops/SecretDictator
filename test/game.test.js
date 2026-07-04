@@ -302,6 +302,57 @@ test('resetGameFrom preserves a disconnected player\'s connection state', () => 
   assert.notEqual(game.getPlayer(other.id).disconnectedAt, null);
 });
 
+test('resetGameFrom clears round state and returns to lobby', () => {
+  const game = new Game();
+  const mark = game.addPlayer('mark-socket', 'mark');
+  const alice = game.addPlayer('alice-socket', 'Alice');
+  const bob = game.addPlayer('bob-socket', 'Bob');
+  const carol = game.addPlayer('carol-socket', 'Carol');
+  const dave = game.addPlayer('dave-socket', 'Dave');
+  game.setTableOrderFrom(mark.socketId, [mark.id, alice.id, bob.id, carol.id, dave.id]);
+  game.startGame();
+
+  const president = game.getPlayer(game.currentPresidentId);
+  const nominee = game.getEligibleChancellors()[0];
+  game.nominateChancellor(president.socketId, nominee.id);
+  game.castVote(president.socketId, 'ja');
+  game.lastVoteResult = { passed: true, ja: 1, nein: 0, votes: [] };
+  game.liberalPolicies = 2;
+  game.fascistPolicies = 3;
+  game.electionTracker = 2;
+  game.pendingPower = 'execution';
+  game.pendingPowerSource = { type: 'investigation', presidentId: president.id, targetId: nominee.id };
+  game.pendingVeto = true;
+  game.presidentHand = ['liberal'];
+  game.chancellorHand = ['fascist'];
+  game.winner = 'liberals';
+  game.winReason = 'test state';
+
+  game.resetGameFrom(mark.socketId);
+
+  assert.equal(game.phase, 'lobby');
+  assert.equal(game.round, 0);
+  assert.equal(game.currentPresidentId, null);
+  assert.equal(game.currentChancellorId, null);
+  assert.equal(game.previousPresidentId, null);
+  assert.equal(game.previousChancellorId, null);
+  assert.deepEqual(game.votes, {});
+  assert.equal(game.lastVoteResult, null);
+  assert.equal(game.liberalPolicies, 0);
+  assert.equal(game.fascistPolicies, 0);
+  assert.equal(game.electionTracker, 0);
+  assert.deepEqual(game.presidentHand, []);
+  assert.deepEqual(game.chancellorHand, []);
+  assert.equal(game.pendingPower, null);
+  assert.equal(game.pendingPowerSource, null);
+  assert.equal(game.pendingVeto, false);
+  assert.equal(game.winner, null);
+  assert.equal(game.winReason, null);
+  assert.deepEqual(game.players.map((player) => player.role), [null, null, null, null, null]);
+  assert.deepEqual(game.players.map((player) => player.party), [null, null, null, null, null]);
+  assert.deepEqual(game.publicState().tableOrderIds, [mark.id, alice.id, bob.id, carol.id, dave.id]);
+});
+
 test('excludes disconnected players from eligible chancellor nominees', () => {
   const game = makeGame(5);
   game.startGame();

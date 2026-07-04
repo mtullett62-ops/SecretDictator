@@ -554,7 +554,7 @@ function renderAdminReset() {
   button.addEventListener('click', () => {
     if (window.confirm('Reset the game and keep all current players?')) {
       votedKey = null;
-      emit('resetGame');
+      emit('resetGame', null);
     }
   });
 
