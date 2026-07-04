@@ -1,5 +1,27 @@
 const socket = io();
 
+// Mirrors the executive-power schedule in game.js, used here only to decide
+// which power icon to draw under each fascist policy slot.
+const FASCIST_POWERS = {
+  small: [null, null, 'policyPeek', 'execution', 'execution', null],
+  medium: [null, 'investigate', 'specialElection', 'execution', 'execution', null],
+  large: ['investigate', 'investigate', 'specialElection', 'execution', 'execution', null]
+};
+
+const POWER_ICON = {
+  investigate: '\u{1F50D}',
+  policyPeek: '\u{1F441}',
+  specialElection: '\u{1F5F3}',
+  execution: '\u{1F480}'
+};
+
+const POWER_LABEL = {
+  investigate: 'Investigate',
+  policyPeek: 'Peek',
+  specialElection: 'Election',
+  execution: 'Execute'
+};
+
 let publicState = null;
 let privateState = null;
 
@@ -8,12 +30,16 @@ const nameInput = document.getElementById('nameInput');
 const joinButton = document.getElementById('joinButton');
 const startButton = document.getElementById('startButton');
 const errorEl = document.getElementById('error');
+const connectionStatus = document.getElementById('connectionStatus');
 const phaseText = document.getElementById('phaseText');
-const governmentText = document.getElementById('governmentText');
+const presidentText = document.getElementById('presidentText');
+const chancellorText = document.getElementById('chancellorText');
+const playerCountText = document.getElementById('playerCountText');
 const winnerText = document.getElementById('winnerText');
 const playerList = document.getElementById('playerList');
 const liberalTrack = document.getElementById('liberalTrack');
 const fascistTrack = document.getElementById('fascistTrack');
+const fascistPowerRow = document.getElementById('fascistPowerRow');
 const electionTrack = document.getElementById('electionTrack');
 const actions = document.getElementById('actions');
 const personal = document.getElementById('personal');
@@ -24,6 +50,16 @@ nameInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') emit('joinGame', nameInput.value);
 });
 startButton.addEventListener('click', () => emit('startGame'));
+
+socket.on('connect', () => {
+  connectionStatus.textContent = 'connected';
+  connectionStatus.className = 'connection-status online';
+});
+
+socket.on('disconnect', () => {
+  connectionStatus.textContent = 'disconnected';
+  connectionStatus.className = 'connection-status offline';
+});
 
 socket.on('gameState', (state) => {
   publicState = state;
@@ -67,9 +103,9 @@ function renderJoin() {
 
 function renderStatus() {
   phaseText.textContent = labelPhase(publicState.phase);
-  const president = playerName(publicState.currentPresidentId);
-  const chancellor = playerName(publicState.currentChancellorId);
-  governmentText.textContent = `President: ${president || 'none'} | Chancellor: ${chancellor || 'none'}`;
+  presidentText.textContent = playerName(publicState.currentPresidentId) || '—';
+  chancellorText.textContent = playerName(publicState.currentChancellorId) || '—';
+  playerCountText.textContent = publicState.players.length;
   winnerText.textContent = publicState.winner ? `${capitalize(publicState.winner)} win. ${publicState.winReason}` : '';
 }
 
@@ -78,12 +114,12 @@ function renderPlayers() {
   for (const player of publicState.players) {
     const item = document.createElement('li');
     if (!player.alive) item.classList.add('dead');
-    item.textContent = player.name;
+    item.append(player.name);
     if (player.isPresident) item.append(tag('President'));
     if (player.isChancellor) item.append(tag('Chancellor'));
     if (player.isTermLimited) item.append(tag('Term limited'));
-    if (!player.alive) item.append(tag('Dead'));
-    if (!player.connected) item.append(tag('Disconnected'));
+    if (!player.alive) item.append(tag('Dead', true));
+    if (!player.connected) item.append(tag('Disconnected', true));
     playerList.append(item);
   }
 }
@@ -91,22 +127,49 @@ function renderPlayers() {
 function renderBoard() {
   renderTrack(liberalTrack, 5, publicState.liberalPolicies, 'liberal');
   renderTrack(fascistTrack, 6, publicState.fascistPolicies, 'fascist');
+  renderPowerRow();
   electionTrack.innerHTML = '';
   for (let index = 0; index < 3; index += 1) {
     const dot = document.createElement('div');
-    dot.className = `circle ${index < publicState.electionTracker ? 'filledTracker' : ''}`;
+    dot.className = `circle ${index < publicState.electionTracker ? 'tracker-filled' : ''}`;
     electionTrack.append(dot);
   }
 }
 
-function renderTrack(container, total, filled, className) {
+function renderTrack(container, total, filled, party) {
   container.innerHTML = '';
   for (let index = 0; index < total; index += 1) {
-    const box = document.createElement('div');
-    box.className = `box ${index < filled ? className : ''}`;
-    box.textContent = index < filled ? 'X' : '';
-    container.append(box);
+    const slot = document.createElement('div');
+    const isFilled = index < filled;
+    slot.className = `slot ${isFilled ? `filled-${party}` : ''}`;
+    slot.textContent = isFilled ? '✓' : '';
+    container.append(slot);
   }
+}
+
+function renderPowerRow() {
+  fascistPowerRow.innerHTML = '';
+  const playerCount = publicState.players.length;
+  const schedule = playerCount > 0 ? powerSchedule(playerCount) : FASCIST_POWERS.large;
+  for (let index = 0; index < 6; index += 1) {
+    const cell = document.createElement('div');
+    cell.className = 'power-cell';
+    const power = schedule[index];
+    if (power) {
+      cell.textContent = POWER_ICON[power];
+      const label = document.createElement('span');
+      label.className = 'power-label';
+      label.textContent = POWER_LABEL[power];
+      cell.append(label);
+    }
+    fascistPowerRow.append(cell);
+  }
+}
+
+function powerSchedule(playerCount) {
+  if (playerCount <= 6) return FASCIST_POWERS.small;
+  if (playerCount <= 8) return FASCIST_POWERS.medium;
+  return FASCIST_POWERS.large;
 }
 
 function renderPersonal() {
@@ -314,9 +377,9 @@ function playerName(id) {
   return player ? player.name : '';
 }
 
-function tag(label) {
+function tag(label, muted) {
   const span = document.createElement('span');
-  span.className = 'tag';
+  span.className = muted ? 'tag tag-dead' : 'tag';
   span.textContent = label;
   return span;
 }

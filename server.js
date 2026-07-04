@@ -1,6 +1,7 @@
 const path = require('path');
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const { Server } = require('socket.io');
 const { Game } = require('./game');
 
@@ -10,6 +11,7 @@ const io = new Server(server);
 const game = new Game();
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.get('/health', (_req, res) => res.sendStatus(200));
 
 io.on('connection', (socket) => {
   emitAll();
@@ -57,4 +59,15 @@ function emitAll() {
 const port = process.env.PORT || 3000;
 server.listen(port, () => {
   console.log(`SecretDictator listening on http://localhost:${port}`);
+  startKeepAlive();
 });
+
+// Render's free tier spins the service down after a period without an inbound
+// HTTP request. Pinging our own public health endpoint keeps it awake.
+function startKeepAlive() {
+  const target = `${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/health`;
+  const client = target.startsWith('https') ? https : http;
+  setInterval(() => {
+    client.get(target, (res) => res.resume()).on('error', () => {});
+  }, 45000);
+}

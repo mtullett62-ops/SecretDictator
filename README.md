@@ -23,3 +23,4 @@ npm test
 - The client only renders state and sends player actions.
 - There is one game, no accounts, no persistence, no reconnect support, and no database.
 - Restarting the server resets the game.
+- The server pings its own `/health` endpoint every 45 seconds so a Render free-tier deployment doesn't spin down from inactivity. Set `RENDER_EXTERNAL_URL` (Render sets this automatically) so the ping targets the public URL instead of localhost.

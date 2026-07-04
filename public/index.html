@@ -3,72 +3,99 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SecretDictator</title>
+    <title>Secret Dictator</title>
     <link rel="stylesheet" href="/style.css">
   </head>
   <body>
-    <main>
-      <header>
-        <h1>SecretDictator</h1>
-        <p>One shared game. Server-authoritative. Refreshing does not reconnect you.</p>
-      </header>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">SD</span>
+        <div>
+          <h1>Secret Dictator</h1>
+          <p>One shared game &middot; server-authoritative &middot; refreshing does not reconnect you</p>
+        </div>
+      </div>
+      <div id="connectionStatus" class="connection-status">connecting&hellip;</div>
+    </header>
 
-      <section id="joinPanel" class="panel">
-        <h2>Join</h2>
+    <main>
+      <section id="joinPanel" class="panel join-panel">
         <div class="row">
-          <input id="nameInput" maxlength="24" placeholder="Username" autocomplete="off">
-          <button id="joinButton">Join</button>
-          <button id="startButton">Start Game</button>
+          <input id="nameInput" maxlength="24" placeholder="Choose a username" autocomplete="off">
+          <button id="joinButton">Join Game</button>
+          <button id="startButton" class="secondary">Start Game</button>
         </div>
         <p id="error" class="error"></p>
       </section>
 
-      <section id="statusPanel" class="panel">
-        <h2>Current Phase</h2>
-        <p id="phaseText"></p>
-        <p id="governmentText"></p>
-        <p id="winnerText"></p>
+      <section class="status-strip panel">
+        <div class="status-item">
+          <span class="status-label">Phase</span>
+          <span id="phaseText" class="status-value">&mdash;</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">President</span>
+          <span id="presidentText" class="status-value">&mdash;</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Chancellor</span>
+          <span id="chancellorText" class="status-value">&mdash;</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Players</span>
+          <span id="playerCountText" class="status-value">0</span>
+        </div>
+        <p id="winnerText" class="winner-banner"></p>
       </section>
 
-      <section class="grid">
-        <article class="panel">
-          <h2>Player List</h2>
-          <ul id="playerList"></ul>
-        </article>
+      <div class="table-layout">
+        <aside class="side-column">
+          <article class="panel">
+            <h2>Players</h2>
+            <ul id="playerList"></ul>
+          </article>
 
-        <article class="panel">
-          <h2>Board</h2>
-          <div class="track">
-            <strong>Liberal Track</strong>
-            <div id="liberalTrack" class="boxes five"></div>
+          <article class="panel">
+            <h2>Your Information</h2>
+            <div id="personal"></div>
+          </article>
+        </aside>
+
+        <div class="center-column">
+          <div class="board-frame">
+            <div class="board">
+              <div class="board-plate liberal-plate">
+                <div class="plate-title">LIBERAL POLICIES</div>
+                <div id="liberalTrack" class="slots liberal-slots"></div>
+              </div>
+
+              <div class="board-center">
+                <div class="board-seal">SD</div>
+                <div class="plate-title">ELECTION TRACKER</div>
+                <div id="electionTrack" class="circles"></div>
+              </div>
+
+              <div class="board-plate fascist-plate">
+                <div class="plate-title">FASCIST POLICIES</div>
+                <div id="fascistTrack" class="slots fascist-slots"></div>
+                <div id="fascistPowerRow" class="power-row"></div>
+              </div>
+            </div>
           </div>
-          <div class="track">
-            <strong>Fascist Track</strong>
-            <div id="fascistTrack" class="boxes six"></div>
-          </div>
-          <div class="track">
-            <strong>Election Tracker</strong>
-            <div id="electionTrack" class="circles"></div>
-          </div>
-        </article>
-      </section>
 
-      <section id="actionsPanel" class="panel">
-        <h2>Actions</h2>
-        <div id="actions"></div>
-      </section>
+          <article id="actionsPanel" class="panel actions-panel">
+            <h2>Actions</h2>
+            <div id="actions"></div>
+          </article>
+        </div>
 
-      <section class="grid">
-        <article class="panel">
-          <h2>Personal Information</h2>
-          <div id="personal"></div>
-        </article>
-
-        <article class="panel">
-          <h2>Game Log</h2>
-          <ol id="log"></ol>
-        </article>
-      </section>
+        <aside class="side-column">
+          <article class="panel log-panel">
+            <h2>Game Log</h2>
+            <ol id="log"></ol>
+          </article>
+        </aside>
+      </div>
     </main>
 
     <script src="/socket.io/socket.io.js"></script>
