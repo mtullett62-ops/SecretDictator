@@ -19,6 +19,7 @@ io.on('connection', (socket) => {
   socket.on('joinGame', (name, reply) => handle(socket, reply, () => game.addPlayer(socket.id, name)));
   socket.on('leaveGame', (_payload, reply) => handle(socket, reply, () => game.removePlayer(socket.id)));
   socket.on('startGame', (_payload, reply) => handle(socket, reply, () => game.startGame()));
+  socket.on('resetGame', (_payload, reply) => handle(socket, reply, () => game.resetGameFrom(socket.id)));
   socket.on('nominateChancellor', (playerId, reply) => handle(socket, reply, () => game.nominateChancellor(socket.id, playerId)));
   socket.on('castVote', (vote, reply) => handle(socket, reply, () => game.castVote(socket.id, vote)));
   socket.on('presidentDiscard', (index, reply) => handle(socket, reply, () => game.presidentDiscard(socket.id, index)));

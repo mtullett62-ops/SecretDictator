@@ -277,10 +277,12 @@ function renderActions() {
   }
   if (publicState.phase === 'game_over') {
     actions.textContent = 'Game over.';
+    renderAdminReset();
     return;
   }
   if (!privateState.alive) {
     actions.textContent = 'Dead players cannot act.';
+    renderAdminReset();
     return;
   }
 
@@ -299,6 +301,28 @@ function renderActions() {
   } else {
     actions.textContent = 'Waiting for another player.';
   }
+
+  renderAdminReset();
+}
+
+function renderAdminReset() {
+  if (!privateState || privateState.name.trim().toLowerCase() !== 'mark') return;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'admin-actions';
+
+  const button = document.createElement('button');
+  button.className = 'danger';
+  button.textContent = 'Reset Game';
+  button.addEventListener('click', () => {
+    if (window.confirm('Reset the game and keep all current players?')) {
+      votedKey = null;
+      emit('resetGame');
+    }
+  });
+
+  wrapper.append(button);
+  actions.append(wrapper);
 }
 
 function renderNomination() {

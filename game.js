@@ -33,6 +33,11 @@ class Game {
 
   reset() {
     this.players = [];
+    this.resetRoundState();
+    this.addLog('Waiting for players.');
+  }
+
+  resetRoundState() {
     this.phase = PHASES.LOBBY;
     this.log = [];
     this.round = 0;
@@ -58,7 +63,22 @@ class Game {
     this.pendingVeto = false;
     this.winner = null;
     this.winReason = null;
-    this.addLog('Waiting for players.');
+  }
+
+  resetGameFrom(socketId) {
+    const requester = this.findPlayerBySocket(socketId);
+    if (!requester || requester.name.trim().toLowerCase() !== 'mark') {
+      throw new Error('Only mark can reset the game.');
+    }
+
+    this.players = this.players.map((player) => ({
+      ...player,
+      role: null,
+      party: null,
+      alive: true
+    }));
+    this.resetRoundState();
+    this.addLog('Game reset by mark.');
   }
 
   addPlayer(socketId, name) {
