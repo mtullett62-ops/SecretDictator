@@ -176,7 +176,7 @@ test('table seats must be unique', () => {
   assert.throws(() => game.setPlayerSeatFrom(mark.socketId, bob.id, 0), /already taken/);
 });
 
-test('president rotation follows table order when the game starts', () => {
+test('initial president starts randomly and then rotation follows table order', () => {
   const game = new Game();
   const mark = game.addPlayer('mark-socket', 'mark');
   const alice = game.addPlayer('alice-socket', 'Alice');
@@ -189,16 +189,17 @@ test('president rotation follows table order when the game starts', () => {
   game.setPlayerSeatFrom(mark.socketId, alice.id, 2);
   game.setPlayerSeatFrom(mark.socketId, carol.id, 3);
   game.setPlayerSeatFrom(mark.socketId, mark.id, 4);
+  game.randomInitialPresidentIndex = () => 2;
   game.startGame();
 
-  assert.equal(game.currentPresidentId, bob.id);
+  assert.equal(game.currentPresidentId, alice.id);
   const nominee = game.getEligibleChancellors()[0];
-  game.nominateChancellor(bob.socketId, nominee.id);
+  game.nominateChancellor(alice.socketId, nominee.id);
   for (const player of game.livingPlayers()) {
     game.castVote(player.socketId, 'nein');
   }
 
-  assert.equal(game.currentPresidentId, dave.id);
+  assert.equal(game.currentPresidentId, carol.id);
 });
 
 test('starting with table order requires every player to be seated', () => {

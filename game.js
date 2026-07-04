@@ -270,7 +270,23 @@ class Game {
     this.previousPresidentId = null;
     this.previousChancellorId = null;
     this.addLog('Game started.');
-    this.advancePresident();
+    this.chooseInitialPresident();
+  }
+
+  chooseInitialPresident() {
+    const living = this.livingPlayers();
+    if (!living.length) throw new Error('No living players remain.');
+    const president = living[this.randomInitialPresidentIndex(living.length)];
+    const cursor = this.players.findIndex((player) => player.id === president.id);
+    this.normalPresidentCursor = cursor;
+    this.presidentCursor = cursor;
+    this.currentPresidentId = president.id;
+    this.round += 1;
+    this.addLog(`${president.name} is President.`);
+  }
+
+  randomInitialPresidentIndex(playerCount) {
+    return crypto.randomInt(playerCount);
   }
 
   nominateChancellor(socketId, nomineeId) {
