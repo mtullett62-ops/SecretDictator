@@ -22,6 +22,8 @@ const POWER_LABEL = {
   execution: 'Execute'
 };
 
+const STORED_NAME_KEY = 'secretDictator.playerName';
+
 let publicState = null;
 let privateState = null;
 
@@ -50,15 +52,22 @@ let hasRenderedInitialLog = false;
 let toastTimer = null;
 let votedKey = null;
 
-joinButton.addEventListener('click', () => emit('joinGame', nameInput.value));
+joinButton.addEventListener('click', () => joinGame());
 nameInput.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') emit('joinGame', nameInput.value);
+  if (event.key === 'Enter') joinGame();
 });
 startButton.addEventListener('click', () => emit('startGame'));
+
+const storedName = window.localStorage.getItem(STORED_NAME_KEY);
+if (storedName) nameInput.value = storedName;
 
 socket.on('connect', () => {
   connectionStatus.textContent = 'connected';
   connectionStatus.className = 'connection-status online';
+  const rememberedName = window.localStorage.getItem(STORED_NAME_KEY);
+  if (rememberedName) emit('joinGame', rememberedName, null, () => {
+    nameInput.value = rememberedName;
+  });
 });
 
 socket.on('disconnect', () => {
@@ -80,13 +89,22 @@ socket.on('errorMessage', (message) => {
   errorEl.textContent = message;
 });
 
-function emit(eventName, payload, onError) {
+function joinGame() {
+  const name = nameInput.value;
+  emit('joinGame', name, null, () => {
+    window.localStorage.setItem(STORED_NAME_KEY, name.trim().slice(0, 24));
+  });
+}
+
+function emit(eventName, payload, onError, onSuccess) {
   errorEl.textContent = '';
   socket.emit(eventName, payload, (reply) => {
     if (reply && !reply.ok) {
       errorEl.textContent = reply.error;
       if (onError) onError();
+      return;
     }
+    if (onSuccess) onSuccess();
   });
 }
 
@@ -119,15 +137,33 @@ function renderStatus() {
 
 function renderPlayers() {
   playerList.innerHTML = '';
+  const canRemovePlayers = isMark();
   for (const player of publicState.players) {
     const item = document.createElement('li');
     if (!player.alive) item.classList.add('dead');
-    item.append(player.name);
-    if (player.isPresident) item.append(tag('President'));
-    if (player.isChancellor) item.append(tag('Chancellor'));
-    if (player.isTermLimited) item.append(tag('Term limited'));
-    if (!player.alive) item.append(tag('Dead', true));
-    if (!player.connected) item.append(tag('Disconnected', true));
+    const details = document.createElement('div');
+    details.className = 'player-details';
+    details.append(player.name);
+    if (player.isPresident) details.append(tag('President'));
+    if (player.isChancellor) details.append(tag('Chancellor'));
+    if (player.isTermLimited) details.append(tag('Term limited'));
+    if (!player.alive) details.append(tag('Dead', true));
+    if (!player.connected) details.append(tag('Disconnected', true));
+    item.append(details);
+
+    if (canRemovePlayers && player.id !== privateState.id) {
+      const button = document.createElement('button');
+      button.className = 'player-remove';
+      button.type = 'button';
+      button.textContent = 'Remove';
+      button.addEventListener('click', () => {
+        if (window.confirm(`Remove ${player.name} from the game?`)) {
+          emit('removePlayer', player.id);
+        }
+      });
+      item.append(button);
+    }
+
     playerList.append(item);
   }
 }
@@ -306,7 +342,7 @@ function renderActions() {
 }
 
 function renderAdminReset() {
-  if (!privateState || privateState.name.trim().toLowerCase() !== 'mark') return;
+  if (!isMark()) return;
 
   const wrapper = document.createElement('div');
   wrapper.className = 'admin-actions';
@@ -323,6 +359,10 @@ function renderAdminReset() {
 
   wrapper.append(button);
   actions.append(wrapper);
+}
+
+function isMark() {
+  return Boolean(privateState && privateState.name.trim().toLowerCase() === 'mark');
 }
 
 function renderNomination() {

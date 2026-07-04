@@ -93,6 +93,53 @@ test('chaos policy enacts top card without triggering an executive action', () =
   assert.equal(game.phase, 'nomination');
 });
 
+test('disconnect keeps a player during the grace period and reconnects by name', () => {
+  const game = makeGame(5);
+  game.startGame();
+  const player = game.players[0];
+
+  const disconnected = game.disconnectPlayer(player.socketId);
+  assert.equal(disconnected.id, player.id);
+  assert.equal(game.players.length, 5);
+  assert.equal(game.getPlayer(player.id).connected, false);
+
+  const reconnected = game.addPlayer('fresh-socket', player.name);
+  assert.equal(reconnected.id, player.id);
+  assert.equal(reconnected.socketId, 'fresh-socket');
+  assert.equal(reconnected.connected, true);
+  assert.equal(reconnected.disconnectedAt, null);
+});
+
+test('expired disconnected players are removed from the player list', () => {
+  const game = makeGame(5);
+  const player = game.players[0];
+
+  game.disconnectPlayer(player.socketId);
+
+  assert.equal(game.expireDisconnectedPlayer(player.id), true);
+  assert.equal(game.players.some((candidate) => candidate.id === player.id), false);
+});
+
+test('mark can manually remove players', () => {
+  const game = new Game();
+  game.addPlayer('mark-socket', 'mark');
+  game.addPlayer('other-socket', 'Other');
+  const other = game.findPlayerBySocket('other-socket');
+
+  game.removePlayerFrom('mark-socket', other.id);
+
+  assert.equal(game.players.some((candidate) => candidate.id === other.id), false);
+});
+
+test('only mark can manually remove players', () => {
+  const game = new Game();
+  game.addPlayer('mark-socket', 'mark');
+  game.addPlayer('other-socket', 'Other');
+  const mark = game.findPlayerBySocket('mark-socket');
+
+  assert.throws(() => game.removePlayerFrom('other-socket', mark.id), /Only mark/);
+});
+
 function tally(values) {
   return values.reduce((counts, value) => {
     counts[value] = (counts[value] || 0) + 1;

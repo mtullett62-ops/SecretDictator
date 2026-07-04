@@ -75,21 +75,31 @@ class Game {
       ...player,
       role: null,
       party: null,
-      alive: true
+      alive: true,
+      connected: true,
+      disconnectedAt: null
     }));
     this.resetRoundState();
     this.addLog('Game reset by mark.');
   }
 
   addPlayer(socketId, name) {
-    this.requirePhase(PHASES.LOBBY);
     if (this.findPlayerBySocket(socketId)) throw new Error('You have already joined.');
-    if (this.players.length >= 10) throw new Error('The game is full.');
     const cleanName = String(name || '').trim().slice(0, 24);
     if (!cleanName) throw new Error('Enter a username.');
-    if (this.players.some((player) => player.name.toLowerCase() === cleanName.toLowerCase())) {
-      throw new Error('That username is already taken.');
+
+    const existing = this.players.find((player) => player.name.toLowerCase() === cleanName.toLowerCase());
+    if (existing) {
+      if (existing.connected) throw new Error('That username is already taken.');
+      existing.socketId = socketId;
+      existing.connected = true;
+      existing.disconnectedAt = null;
+      this.addLog(`${existing.name} reconnected.`);
+      return existing;
     }
+
+    this.requirePhase(PHASES.LOBBY);
+    if (this.players.length >= 10) throw new Error('The game is full.');
 
     const player = {
       id: crypto.randomUUID(),
@@ -98,23 +108,98 @@ class Game {
       role: null,
       party: null,
       alive: true,
-      connected: true
+      connected: true,
+      disconnectedAt: null
     };
     this.players.push(player);
     this.addLog(`${player.name} joined.`);
     return player;
   }
 
+  disconnectPlayer(socketId) {
+    const player = this.findPlayerBySocket(socketId);
+    if (!player || !player.connected) return null;
+    player.connected = false;
+    player.disconnectedAt = new Date().toISOString();
+    this.addLog(`${player.name} disconnected.`);
+    return player;
+  }
+
   removePlayer(socketId) {
     const player = this.findPlayerBySocket(socketId);
     if (!player) return;
-    if (this.phase === PHASES.LOBBY) {
-      this.players = this.players.filter((candidate) => candidate.id !== player.id);
-      this.addLog(`${player.name} left.`);
+    this.removePlayerById(player.id, `${player.name} left.`);
+  }
+
+  expireDisconnectedPlayer(playerId) {
+    const player = this.players.find((candidate) => candidate.id === playerId);
+    if (!player || player.connected) return false;
+    this.removePlayerById(player.id, `${player.name} was removed after disconnecting.`);
+    return true;
+  }
+
+  removePlayerFrom(requesterSocketId, targetPlayerId) {
+    const requester = this.findPlayerBySocket(requesterSocketId);
+    if (!requester || requester.name.trim().toLowerCase() !== 'mark') {
+      throw new Error('Only mark can remove players.');
+    }
+    const target = this.getPlayer(targetPlayerId);
+    this.removePlayerById(target.id, `${target.name} was removed by mark.`);
+  }
+
+  removePlayerById(playerId, logMessage) {
+    const removedIndex = this.players.findIndex((candidate) => candidate.id === playerId);
+    const player = this.players[removedIndex];
+    if (!player) return;
+    this.players = this.players.filter((candidate) => candidate.id !== player.id);
+    this.adjustCursorsAfterRemoval(removedIndex);
+    this.cleanUpRemovedPlayer(player.id);
+    this.addLog(logMessage);
+  }
+
+  adjustCursorsAfterRemoval(removedIndex) {
+    if (removedIndex <= this.normalPresidentCursor) this.normalPresidentCursor -= 1;
+    if (removedIndex <= this.presidentCursor) this.presidentCursor -= 1;
+    this.normalPresidentCursor = Math.min(this.normalPresidentCursor, this.players.length - 1);
+    this.presidentCursor = Math.min(this.presidentCursor, this.players.length - 1);
+  }
+
+  cleanUpRemovedPlayer(playerId) {
+    delete this.votes[playerId];
+    if (this.previousPresidentId === playerId) this.previousPresidentId = null;
+    if (this.previousChancellorId === playerId) this.previousChancellorId = null;
+    if (this.specialPresidentId === playerId) this.specialPresidentId = null;
+
+    if (this.currentPresidentId === playerId) {
+      this.currentPresidentId = null;
+      this.cancelActiveTurn();
+      if (this.phase !== PHASES.LOBBY && this.phase !== PHASES.GAME_OVER && this.livingPlayers().length) {
+        this.advancePresident();
+      }
       return;
     }
-    player.connected = false;
-    this.addLog(`${player.name} disconnected.`);
+
+    if (this.currentChancellorId === playerId) {
+      this.currentChancellorId = null;
+      this.cancelGovernmentSelection();
+    }
+  }
+
+  cancelActiveTurn() {
+    this.cancelGovernmentSelection();
+    this.pendingPower = null;
+    this.pendingPowerSource = null;
+  }
+
+  cancelGovernmentSelection() {
+    this.votes = {};
+    this.lastVoteResult = null;
+    this.presidentHand = [];
+    this.chancellorHand = [];
+    this.pendingVeto = false;
+    if (this.phase !== PHASES.LOBBY && this.phase !== PHASES.GAME_OVER) {
+      this.phase = PHASES.NOMINATION;
+    }
   }
 
   startGame() {

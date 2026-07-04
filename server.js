@@ -9,6 +9,8 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const game = new Game();
+const DISCONNECT_GRACE_MS = 60000;
+const disconnectTimers = new Map();
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (_req, res) => res.sendStatus(200));
@@ -16,8 +18,19 @@ app.get('/health', (_req, res) => res.sendStatus(200));
 io.on('connection', (socket) => {
   emitAll();
 
-  socket.on('joinGame', (name, reply) => handle(socket, reply, () => game.addPlayer(socket.id, name)));
-  socket.on('leaveGame', (_payload, reply) => handle(socket, reply, () => game.removePlayer(socket.id)));
+  socket.on('joinGame', (name, reply) => handle(socket, reply, () => {
+    const player = game.addPlayer(socket.id, name);
+    clearDisconnectTimer(player.id);
+  }));
+  socket.on('leaveGame', (_payload, reply) => handle(socket, reply, () => {
+    const player = game.findPlayerBySocket(socket.id);
+    game.removePlayer(socket.id);
+    if (player) clearDisconnectTimer(player.id);
+  }));
+  socket.on('removePlayer', (playerId, reply) => handle(socket, reply, () => {
+    game.removePlayerFrom(socket.id, playerId);
+    clearDisconnectTimer(playerId);
+  }));
   socket.on('startGame', (_payload, reply) => handle(socket, reply, () => game.startGame()));
   socket.on('resetGame', (_payload, reply) => handle(socket, reply, () => game.resetGameFrom(socket.id)));
   socket.on('nominateChancellor', (playerId, reply) => handle(socket, reply, () => game.nominateChancellor(socket.id, playerId)));
@@ -30,12 +43,29 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     try {
-      game.removePlayer(socket.id);
+      const player = game.disconnectPlayer(socket.id);
+      if (player) scheduleDisconnectExpiry(player.id);
     } finally {
       emitAll();
     }
   });
 });
+
+function scheduleDisconnectExpiry(playerId) {
+  clearDisconnectTimer(playerId);
+  const timer = setTimeout(() => {
+    disconnectTimers.delete(playerId);
+    if (game.expireDisconnectedPlayer(playerId)) emitAll();
+  }, DISCONNECT_GRACE_MS);
+  disconnectTimers.set(playerId, timer);
+}
+
+function clearDisconnectTimer(playerId) {
+  const timer = disconnectTimers.get(playerId);
+  if (!timer) return;
+  clearTimeout(timer);
+  disconnectTimers.delete(playerId);
+}
 
 function handle(socket, reply, action) {
   try {

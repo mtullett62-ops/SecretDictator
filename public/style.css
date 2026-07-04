@@ -260,11 +260,30 @@ button:disabled {
 }
 
 #playerList li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
   margin: 0 0 8px;
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--orange-tint);
   font-size: 15px;
+}
+
+.player-details {
+  min-width: 0;
+}
+
+.player-remove {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #8f1f16;
+  border-color: #67140e;
+  color: #fff;
+  font-size: 12px;
 }
 
 .tag {
@@ -283,7 +302,7 @@ button:disabled {
   background: #6b6058;
 }
 
-.dead {
+.dead .player-details {
   text-decoration: line-through;
   color: #a39a90;
 }
