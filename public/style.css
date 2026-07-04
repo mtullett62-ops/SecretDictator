@@ -170,6 +170,22 @@ main {
   margin: 0;
 }
 
+.pause-notice {
+  flex-basis: 100%;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--orange-dark);
+  background: var(--orange-tint);
+  border: 1px solid var(--orange-light);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 0;
+}
+
+.pause-notice:empty {
+  display: none;
+}
+
 /* ---------- Form controls ---------- */
 
 .row {

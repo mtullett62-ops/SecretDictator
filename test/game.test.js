@@ -140,6 +140,77 @@ test('only mark can manually remove players', () => {
   assert.throws(() => game.removePlayerFrom('other-socket', mark.id), /Only mark/);
 });
 
+test('voting resolves once a non-president voter times out mid-vote', () => {
+  const game = makeGame(5);
+  game.startGame();
+  const president = game.getPlayer(game.currentPresidentId);
+  const nominee = game.getEligibleChancellors()[0];
+  game.nominateChancellor(president.socketId, nominee.id);
+  assert.equal(game.phase, 'voting');
+
+  const [holdout, ...voters] = game.players.filter(
+    (player) => player.id !== president.id && player.id !== nominee.id
+  );
+  for (const voter of voters) game.castVote(voter.socketId, 'ja');
+  game.castVote(president.socketId, 'ja');
+  game.castVote(nominee.socketId, 'ja');
+  assert.equal(game.phase, 'voting');
+
+  game.disconnectPlayer(holdout.socketId);
+  assert.equal(game.expireDisconnectedPlayer(holdout.id), true);
+
+  assert.notEqual(game.phase, 'voting');
+  assert.equal(game.lastVoteResult.passed, true);
+});
+
+test('startGame requires every lobby player to be connected', () => {
+  const game = makeGame(5);
+  const player = game.players[0];
+  game.disconnectPlayer(player.socketId);
+
+  assert.throws(() => game.startGame(), /All players must be connected/);
+});
+
+test('resetGameFrom preserves a disconnected player\'s connection state', () => {
+  const game = new Game();
+  game.addPlayer('mark-socket', 'mark');
+  for (let index = 0; index < 4; index += 1) {
+    game.addPlayer(`socket-${index}`, `Player ${index + 1}`);
+  }
+  game.startGame();
+  const other = game.players.find((player) => player.name === 'Player 1');
+  game.disconnectPlayer(other.socketId);
+
+  game.resetGameFrom('mark-socket');
+
+  assert.equal(game.getPlayer(other.id).connected, false);
+  assert.notEqual(game.getPlayer(other.id).disconnectedAt, null);
+});
+
+test('excludes disconnected players from eligible chancellor nominees', () => {
+  const game = makeGame(5);
+  game.startGame();
+  const candidates = game.getEligibleChancellors();
+  const target = candidates[0];
+  game.disconnectPlayer(target.socketId);
+
+  const eligible = game.getEligibleChancellors().map((player) => player.id);
+  assert.equal(eligible.includes(target.id), false);
+  assert.equal(eligible.length, candidates.length - 1);
+});
+
+test('executive actions cannot target disconnected players', () => {
+  const game = makeGame(5);
+  game.startGame();
+  game.pendingPower = 'execution';
+  game.phase = 'executive_action';
+  const president = game.getPlayer(game.currentPresidentId);
+  const target = game.players.find((player) => player.id !== president.id);
+  game.disconnectPlayer(target.socketId);
+
+  assert.throws(() => game.completeExecutiveAction(president.socketId, target.id), /valid living target/);
+});
+
 function tally(values) {
   return values.reduce((counts, value) => {
     counts[value] = (counts[value] || 0) + 1;

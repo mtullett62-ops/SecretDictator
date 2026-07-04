@@ -75,9 +75,7 @@ class Game {
       ...player,
       role: null,
       party: null,
-      alive: true,
-      connected: true,
-      disconnectedAt: null
+      alive: true
     }));
     this.resetRoundState();
     this.addLog('Game reset by mark.');
@@ -155,6 +153,7 @@ class Game {
     this.adjustCursorsAfterRemoval(removedIndex);
     this.cleanUpRemovedPlayer(player.id);
     this.addLog(logMessage);
+    this.maybeResolveElection();
   }
 
   adjustCursorsAfterRemoval(removedIndex) {
@@ -205,6 +204,9 @@ class Game {
   startGame() {
     this.requirePhase(PHASES.LOBBY);
     if (!ROLE_COUNTS[this.players.length]) throw new Error('Start requires 5 to 10 players.');
+    if (this.players.some((player) => !player.connected)) {
+      throw new Error('All players must be connected before starting.');
+    }
 
     const roles = this.shuffledRoles();
     this.players = this.players.map((player, index) => {
@@ -213,8 +215,7 @@ class Game {
         ...player,
         role,
         party: role === 'liberal' ? 'liberal' : 'fascist',
-        alive: true,
-        connected: true
+        alive: true
       };
     });
 
@@ -247,9 +248,13 @@ class Game {
     const player = this.requireLivingPlayer(socketId);
     if (vote !== 'ja' && vote !== 'nein') throw new Error('Vote must be Ja or Nein.');
     this.votes[player.id] = vote;
+    this.maybeResolveElection();
+  }
 
+  maybeResolveElection() {
+    if (this.phase !== PHASES.VOTING) return;
     const living = this.livingPlayers();
-    if (living.every((candidate) => this.votes[candidate.id])) {
+    if (living.length && living.every((candidate) => this.votes[candidate.id])) {
       this.resolveElection();
     }
   }
@@ -305,7 +310,7 @@ class Game {
     this.requirePhase(PHASES.EXECUTIVE_ACTION);
     const president = this.requireCurrentPresident(socketId);
     const target = this.players.find((player) => player.id === targetId);
-    if (!target || !target.alive || target.id === president.id) {
+    if (!target || !target.alive || !target.connected || target.id === president.id) {
       throw new Error('Choose a valid living target.');
     }
 
@@ -510,6 +515,7 @@ class Game {
   getEligibleChancellors() {
     const living = this.livingPlayers();
     return living.filter((player) => {
+      if (!player.connected) return false;
       if (player.id === this.currentPresidentId) return false;
       return player.id !== this.previousPresidentId && player.id !== this.previousChancellorId;
     });

@@ -38,6 +38,7 @@ const presidentText = document.getElementById('presidentText');
 const chancellorText = document.getElementById('chancellorText');
 const playerCountText = document.getElementById('playerCountText');
 const winnerText = document.getElementById('winnerText');
+const pauseNotice = document.getElementById('pauseNotice');
 const playerList = document.getElementById('playerList');
 const liberalTrack = document.getElementById('liberalTrack');
 const fascistTrack = document.getElementById('fascistTrack');
@@ -112,6 +113,7 @@ function render() {
   if (!publicState) return;
   renderJoin();
   renderStatus();
+  renderPauseNotice();
   renderPlayers();
   renderBoard();
   renderPersonal();
@@ -133,6 +135,20 @@ function renderStatus() {
   chancellorText.textContent = playerName(publicState.currentChancellorId) || '—';
   playerCountText.textContent = publicState.players.length;
   winnerText.textContent = publicState.winner ? `${capitalize(publicState.winner)} win. ${publicState.winReason}` : '';
+}
+
+function renderPauseNotice() {
+  const waitingId = isDisconnected(publicState.currentChancellorId)
+    ? publicState.currentChancellorId
+    : isDisconnected(publicState.currentPresidentId) ? publicState.currentPresidentId : null;
+  pauseNotice.textContent = waitingId
+    ? `Waiting up to 60s for ${playerName(waitingId)} to reconnect…`
+    : '';
+}
+
+function isDisconnected(id) {
+  const player = id && publicState.players.find((candidate) => candidate.id === id);
+  return Boolean(player && !player.connected);
 }
 
 function renderPlayers() {
@@ -449,7 +465,7 @@ function renderExecutiveAction() {
   }
 
   const targetIds = publicState.players
-    .filter((player) => player.alive && player.id !== privateState.id)
+    .filter((player) => player.alive && player.connected && player.id !== privateState.id)
     .map((player) => player.id);
   const select = playerSelect(targetIds);
   const button = document.createElement('button');
