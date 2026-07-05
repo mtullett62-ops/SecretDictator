@@ -37,6 +37,9 @@ io.on('connection', (socket) => {
   socket.on('setTableOrder', (payload, reply) => handle(socket, reply, () => {
     game.setTableOrderFrom(socket.id, payload && payload.playerIds);
   }));
+  socket.on('setSecretRolesEnabled', (enabled, reply) => handle(socket, reply, () => {
+    game.setSecretRolesEnabledFrom(socket.id, enabled);
+  }));
   socket.on('startGame', (_payload, reply) => handle(socket, reply, () => game.startGame()));
   socket.on('resetGame', (_payload, reply) => handle(socket, reply, () => game.resetGameFrom(socket.id)));
   socket.on('nominateChancellor', (playerId, reply) => handle(socket, reply, () => game.nominateChancellor(socket.id, playerId)));
@@ -46,6 +49,7 @@ io.on('connection', (socket) => {
   socket.on('vetoResponse', (accept, reply) => handle(socket, reply, () => game.respondToVeto(socket.id, Boolean(accept))));
   socket.on('executiveAction', (targetId, reply) => handle(socket, reply, () => game.completeExecutiveAction(socket.id, targetId)));
   socket.on('acknowledgePolicyPeek', (_payload, reply) => handle(socket, reply, () => game.acknowledgePolicyPeek(socket.id)));
+  socket.on('useSecretRole', (payload, reply) => handle(socket, reply, () => game.useSecretRole(socket.id, payload)));
 
   socket.on('disconnect', () => {
     try {

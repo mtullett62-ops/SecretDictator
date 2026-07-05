@@ -845,6 +845,73 @@ button:disabled {
   background: linear-gradient(160deg, #d0604a, #8c2a20);
 }
 
+/* ---------- Secret roles ---------- */
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.toggle-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--orange);
+}
+
+.muted-note {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+
+.chip-role {
+  background: linear-gradient(160deg, #8a6dbd, #4f3a7a);
+  cursor: help;
+}
+
+.secret-role-card {
+  background: var(--orange-tint);
+  border: 1px solid var(--orange-light);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.secret-role-name {
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.secret-role-desc {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.secret-action-panel {
+  border-color: #c9a8e8;
+  background: linear-gradient(160deg, #f7f1fc, #ffffff);
+}
+
+.secret-action-panel h2 {
+  color: #6a3fa0;
+}
+
+#secretAction p {
+  font-size: 14px;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+
+#secretAction button {
+  background: linear-gradient(160deg, #8a6dbd, #4f3a7a);
+  border-color: #4f3a7a;
+  color: #fff;
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 1000px) {

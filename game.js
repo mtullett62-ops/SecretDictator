@@ -26,6 +26,59 @@ const PHASES = Object.freeze({
   GAME_OVER: 'game_over'
 });
 
+const SECRET_ROLE_DEFINITIONS = Object.freeze({
+  policeChief: Object.freeze({
+    id: 'policeChief',
+    name: 'Police Chief',
+    type: 'power',
+    ability: 'arrest',
+    description: 'Can arrest someone, blocking them from being President or Chancellor.'
+  }),
+  assassin: Object.freeze({
+    id: 'assassin',
+    name: 'Assassin',
+    type: 'power',
+    ability: 'eliminate',
+    description: 'Can eliminate a player. Killing Hitler gives liberals the win.'
+  }),
+  journalist: Object.freeze({
+    id: 'journalist',
+    name: 'Journalist',
+    type: 'power',
+    ability: 'revealDiscardedPolicy',
+    description: 'Can force someone to reveal a discarded policy.'
+  }),
+  industrialist: Object.freeze({
+    id: 'industrialist',
+    name: 'Industrialist',
+    type: 'power',
+    ability: 'forcePassElection',
+    description: 'Can force-pass an election.'
+  }),
+  unionOrganizer: Object.freeze({
+    id: 'unionOrganizer',
+    name: 'Union Organizer',
+    type: 'power',
+    ability: 'forceFailElection',
+    description: 'Can force-fail an election.'
+  }),
+  constitutionalJudge: Object.freeze({
+    id: 'constitutionalJudge',
+    name: 'Constitutional Judge',
+    type: 'power',
+    ability: 'blockExecutivePower',
+    description: 'Can block any executive power.'
+  })
+});
+
+const SECRET_ROLE_COUNT_WEIGHTS = Object.freeze([
+  Object.freeze({ count: 1, weight: 425 }),
+  Object.freeze({ count: 2, weight: 250 }),
+  Object.freeze({ count: 3, weight: 175 }),
+  Object.freeze({ count: 4, weight: 100 }),
+  Object.freeze({ count: 5, weight: 50 })
+]);
+
 class Game {
   constructor() {
     this.reset();
@@ -33,6 +86,7 @@ class Game {
 
   reset() {
     this.players = [];
+    this.secretRolesEnabled = false;
     this.resetRoundState();
     this.addLog('Waiting for players.');
   }
@@ -63,6 +117,8 @@ class Game {
     this.pendingVeto = false;
     this.winner = null;
     this.winReason = null;
+    this.secretRolesActive = false;
+    this.arrestedPlayerId = null;
   }
 
   resetGameFrom(socketId) {
@@ -74,6 +130,8 @@ class Game {
     this.players = this.players.map((player) => ({
       ...player,
       role: null,
+      secretRole: null,
+      secretRoleUsed: false,
       party: null,
       alive: true
     }));
@@ -105,6 +163,8 @@ class Game {
       name: cleanName,
       tableSeat: null,
       role: null,
+      secretRole: null,
+      secretRoleUsed: false,
       party: null,
       alive: true,
       connected: true,
@@ -182,6 +242,13 @@ class Game {
     this.addLog('Table order was updated by mark.');
   }
 
+  setSecretRolesEnabledFrom(requesterSocketId, setting) {
+    this.requireMarkLobbyAction(requesterSocketId, 'set secret roles');
+    const enabled = typeof setting === 'object' && setting !== null ? setting.enabled : setting;
+    this.secretRolesEnabled = Boolean(enabled);
+    this.addLog(`Secret roles were turned ${this.secretRolesEnabled ? 'on' : 'off'} by mark.`);
+  }
+
   removePlayerById(playerId, logMessage) {
     const removedIndex = this.players.findIndex((candidate) => candidate.id === playerId);
     const player = this.players[removedIndex];
@@ -257,10 +324,13 @@ class Game {
       return {
         ...player,
         role,
+        secretRole: null,
+        secretRoleUsed: false,
         party: role === 'liberal' ? 'liberal' : 'fascist',
         alive: true
       };
     });
+    this.assignSecretRoles();
 
     this.deck = shuffle([...Array(6).fill('liberal'), ...Array(11).fill('fascist')]);
     this.discard = [];
@@ -269,8 +339,153 @@ class Game {
     this.normalPresidentCursor = -1;
     this.previousPresidentId = null;
     this.previousChancellorId = null;
+    this.secretRolesActive = this.secretRolesEnabled;
     this.addLog('Game started.');
     this.chooseInitialPresident();
+  }
+
+  assignSecretRoles() {
+    if (!this.secretRolesEnabled) return;
+    const roleIds = Object.keys(SECRET_ROLE_DEFINITIONS);
+    const secretRoleCount = Math.min(this.randomSecretRoleCount(), this.players.length, roleIds.length);
+    const selectedPlayers = this.randomSample(this.players, secretRoleCount);
+    const selectedRoleIds = this.randomSample(roleIds, secretRoleCount);
+
+    for (let index = 0; index < selectedPlayers.length; index += 1) {
+      selectedPlayers[index].secretRole = selectedRoleIds[index];
+      selectedPlayers[index].secretRoleUsed = false;
+    }
+  }
+
+  randomSecretRoleCount() {
+    const totalWeight = SECRET_ROLE_COUNT_WEIGHTS.reduce((total, option) => total + option.weight, 0);
+    let roll = this.randomInt(totalWeight);
+    for (const option of SECRET_ROLE_COUNT_WEIGHTS) {
+      if (roll < option.weight) return option.count;
+      roll -= option.weight;
+    }
+    return 1;
+  }
+
+  randomInt(max) {
+    return crypto.randomInt(max);
+  }
+
+  randomSample(items, count) {
+    return shuffle(items).slice(0, count);
+  }
+
+  useSecretRole(socketId, payload) {
+    const player = this.requireLivingPlayer(socketId);
+    if (!this.secretRolesActive) throw new Error('Secret roles are not active this game.');
+    if (!player.secretRole) throw new Error('You do not have a secret role.');
+    if (player.secretRoleUsed) throw new Error('You have already used your secret role.');
+
+    const targetId = payload && payload.targetId;
+    switch (SECRET_ROLE_DEFINITIONS[player.secretRole].ability) {
+      case 'arrest':
+        return this.useArrest(player, targetId);
+      case 'eliminate':
+        return this.useEliminate(player, targetId);
+      case 'revealDiscardedPolicy':
+        return this.useRevealDiscardedPolicy(player);
+      case 'forcePassElection':
+        return this.useForceElection(player, true);
+      case 'forceFailElection':
+        return this.useForceElection(player, false);
+      case 'blockExecutivePower':
+        return this.useBlockExecutivePower(player);
+      default:
+        throw new Error('Unknown secret role ability.');
+    }
+  }
+
+  useArrest(player, targetId) {
+    this.requirePhase(PHASES.NOMINATION);
+    const target = this.requireLivingConnectedTarget(targetId, player.id);
+    if (target.id === this.currentPresidentId) throw new Error('The sitting President cannot be targeted.');
+    this.arrestedPlayerId = target.id;
+    player.secretRoleUsed = true;
+    this.addLog(`A hidden power arrested ${target.name}. They cannot be President or Chancellor this round.`);
+  }
+
+  useEliminate(player, targetId) {
+    this.requirePhase(PHASES.NOMINATION);
+    const target = this.requireLivingConnectedTarget(targetId, player.id);
+    if (target.id === this.currentPresidentId) throw new Error('The sitting President cannot be targeted.');
+    target.alive = false;
+    player.secretRoleUsed = true;
+    this.addLog(`A hidden power eliminated ${target.name}.`);
+    if (target.role === 'hitler') {
+      this.endGame('liberals', 'Hitler was eliminated by a secret power.');
+    }
+  }
+
+  useRevealDiscardedPolicy(player) {
+    if (this.phase === PHASES.LOBBY || this.phase === PHASES.GAME_OVER) throw new Error('The game is not active.');
+    if (!this.discard.length) throw new Error('There are no discarded policies to reveal.');
+    const revealed = this.discard[crypto.randomInt(this.discard.length)];
+    player.secretRoleUsed = true;
+    this.addLog(`A hidden power revealed a discarded policy: ${revealed === 'liberal' ? 'Liberal' : 'Fascist'}.`);
+  }
+
+  useForceElection(player, forcePass) {
+    this.requirePhase(PHASES.VOTING);
+    player.secretRoleUsed = true;
+    const living = this.livingPlayers();
+    const votes = living.map((candidate) => ({ playerId: candidate.id, vote: this.votes[candidate.id] || null }));
+    this.votes = {};
+    this.addLog(`A hidden power forced this election to ${forcePass ? 'pass' : 'fail'}.`);
+    this.applyElectionResult(forcePass, forcePass ? living.length : 0, forcePass ? 0 : living.length, votes, true);
+  }
+
+  useBlockExecutivePower(player) {
+    this.requirePhase(PHASES.EXECUTIVE_ACTION);
+    if (!this.pendingPower) throw new Error('No executive power is pending.');
+    player.secretRoleUsed = true;
+    this.addLog(`A hidden power blocked the ${formatPower(this.pendingPower)} power.`);
+    this.pendingPower = null;
+    this.pendingPowerSource = null;
+    this.finishRound();
+  }
+
+  secretRoleActionStateFor(player) {
+    const unavailable = { available: false, targetIds: null };
+    if (!this.secretRolesActive || !player.secretRole || player.secretRoleUsed || !player.alive) return unavailable;
+
+    const ability = SECRET_ROLE_DEFINITIONS[player.secretRole].ability;
+    switch (ability) {
+      case 'arrest':
+        if (this.phase !== PHASES.NOMINATION) return unavailable;
+        return {
+          available: true,
+          targetIds: this.otherLivingConnectedIds(player.id).filter((id) => id !== this.currentPresidentId)
+        };
+      case 'eliminate':
+        if (this.phase !== PHASES.NOMINATION) return unavailable;
+        return {
+          available: true,
+          targetIds: this.otherLivingConnectedIds(player.id).filter((id) => id !== this.currentPresidentId)
+        };
+      case 'revealDiscardedPolicy':
+        if (this.phase === PHASES.LOBBY || this.phase === PHASES.GAME_OVER || !this.discard.length) return unavailable;
+        return { available: true, targetIds: null };
+      case 'forcePassElection':
+      case 'forceFailElection':
+        if (this.phase !== PHASES.VOTING) return unavailable;
+        return { available: true, targetIds: null };
+      case 'blockExecutivePower':
+        if (this.phase !== PHASES.EXECUTIVE_ACTION || !this.pendingPower) return unavailable;
+        return { available: true, targetIds: null };
+      default:
+        return unavailable;
+    }
+  }
+
+  otherLivingConnectedIds(excludePlayerId) {
+    return this.livingPlayers()
+      .filter((player) => player.connected && player.id !== excludePlayerId)
+      .map((player) => player.id);
   }
 
   chooseInitialPresident() {
@@ -368,10 +583,7 @@ class Game {
   completeExecutiveAction(socketId, targetId) {
     this.requirePhase(PHASES.EXECUTIVE_ACTION);
     const president = this.requireCurrentPresident(socketId);
-    const target = this.players.find((player) => player.id === targetId);
-    if (!target || !target.alive || !target.connected || target.id === president.id) {
-      throw new Error('Choose a valid living target.');
-    }
+    const target = this.requireLivingConnectedTarget(targetId, president.id);
 
     if (this.pendingPower === 'investigate') {
       this.pendingPowerSource = { type: 'investigation', presidentId: president.id, targetId: target.id };
@@ -381,6 +593,7 @@ class Game {
     }
 
     if (this.pendingPower === 'specialElection') {
+      if (target.id === this.arrestedPlayerId) throw new Error('That player has been arrested and cannot be chosen.');
       this.specialPresidentId = target.id;
       this.returnPresidentCursor = this.normalPresidentCursor;
       this.addLog(`${president.name} chose ${target.name} for a special election.`);
@@ -415,13 +628,13 @@ class Game {
     const ja = living.filter((player) => this.votes[player.id] === 'ja').length;
     const nein = living.length - ja;
     const passed = ja > nein;
-    this.lastVoteResult = {
-      passed,
-      ja,
-      nein,
-      votes: living.map((player) => ({ playerId: player.id, vote: this.votes[player.id] }))
-    };
+    const votes = living.map((player) => ({ playerId: player.id, vote: this.votes[player.id] }));
     this.addLog(`Vote revealed: ${ja} Ja, ${nein} Nein. Government ${passed ? 'passed' : 'failed'}.`);
+    this.applyElectionResult(passed, ja, nein, votes, false);
+  }
+
+  applyElectionResult(passed, ja, nein, votes, forced) {
+    this.lastVoteResult = { passed, ja, nein, votes, forced };
 
     if (!passed) {
       this.failGovernment();
@@ -513,6 +726,7 @@ class Game {
       this.currentPresidentId = this.specialPresidentId;
       this.specialPresidentId = null;
       this.presidentCursor = this.players.findIndex((player) => player.id === this.currentPresidentId);
+      this.arrestedPlayerId = null;
       this.addLog(`${this.playerName(this.currentPresidentId)} is President by special election.`);
       return;
     }
@@ -526,6 +740,7 @@ class Game {
     this.normalPresidentCursor = nextCursor;
     this.presidentCursor = nextCursor;
     this.currentPresidentId = this.players[nextCursor].id;
+    this.arrestedPlayerId = null;
     this.round += 1;
     this.addLog(`${this.playerName(this.currentPresidentId)} is President.`);
   }
@@ -535,7 +750,7 @@ class Game {
     let cursor = fromCursor;
     for (let i = 0; i < this.players.length; i += 1) {
       cursor = (cursor + 1 + this.players.length) % this.players.length;
-      if (this.players[cursor].alive) return cursor;
+      if (this.players[cursor].alive && this.players[cursor].id !== this.arrestedPlayerId) return cursor;
     }
     throw new Error('No living players remain.');
   }
@@ -576,6 +791,7 @@ class Game {
     return living.filter((player) => {
       if (!player.connected) return false;
       if (player.id === this.currentPresidentId) return false;
+      if (player.id === this.arrestedPlayerId) return false;
       return player.id !== this.previousPresidentId && player.id !== this.previousChancellorId;
     });
   }
@@ -603,10 +819,12 @@ class Game {
         connected: player.connected,
         isPresident: player.id === this.currentPresidentId,
         isChancellor: player.id === this.currentChancellorId,
-        isTermLimited: this.isTermLimited(player.id)
+        isTermLimited: this.isTermLimited(player.id),
+        arrested: player.id === this.arrestedPlayerId
       })),
       currentPresidentId: this.currentPresidentId,
       currentChancellorId: this.currentChancellorId,
+      arrestedPlayerId: this.arrestedPlayerId,
       tableOrderIds,
       eligibleChancellorIds: this.getEligibleChancellors().map((player) => player.id),
       liberalPolicies: this.liberalPolicies,
@@ -615,6 +833,7 @@ class Game {
       round: this.round,
       lastVoteResult: this.lastVoteResult,
       pendingPower: this.pendingPower,
+      secretRoles: this.secretRolePublicState(),
       vetoUnlocked: this.fascistPolicies >= 5,
       winner: this.winner,
       winReason: this.winReason,
@@ -626,10 +845,16 @@ class Game {
     const player = this.findPlayerBySocket(socketId);
     if (!player) return null;
     const visiblePlayers = this.roleVisibilityFor(player);
+    const secretRoleAction = this.secretRoleActionStateFor(player);
     const state = {
       id: player.id,
       name: player.name,
       role: player.role,
+      secretRole: player.secretRole,
+      secretRoleDetails: this.secretRoleDetails(player.secretRole),
+      secretRoleUsed: player.secretRoleUsed,
+      secretRoleAvailable: secretRoleAction.available,
+      secretRoleTargetIds: secretRoleAction.targetIds,
       party: player.party,
       alive: player.alive,
       isPresident: player.id === this.currentPresidentId,
@@ -675,6 +900,24 @@ class Game {
     return [];
   }
 
+  secretRolePublicState() {
+    return {
+      enabled: this.secretRolesEnabled,
+      active: this.secretRolesActive,
+      locked: this.phase !== PHASES.LOBBY,
+      availableRoles: this.secretRoleDefinitions()
+    };
+  }
+
+  secretRoleDefinitions() {
+    return Object.values(SECRET_ROLE_DEFINITIONS).map((role) => ({ ...role }));
+  }
+
+  secretRoleDetails(roleId) {
+    const role = SECRET_ROLE_DEFINITIONS[roleId];
+    return role ? { ...role } : null;
+  }
+
   isTermLimited(playerId) {
     return playerId === this.previousPresidentId || playerId === this.previousChancellorId;
   }
@@ -707,6 +950,14 @@ class Game {
     if (!player) throw new Error('Join the game first.');
     if (!player.alive) throw new Error('Dead players cannot do that.');
     return player;
+  }
+
+  requireLivingConnectedTarget(targetId, excludePlayerId) {
+    const target = this.players.find((player) => player.id === targetId);
+    if (!target || !target.alive || !target.connected || target.id === excludePlayerId) {
+      throw new Error('Choose a valid living target.');
+    }
+    return target;
   }
 
   findPlayerBySocket(socketId) {
@@ -776,4 +1027,4 @@ function formatPower(power) {
   }[power] || power;
 }
 
-module.exports = { Game, PHASES, ROLE_COUNTS };
+module.exports = { Game, PHASES, ROLE_COUNTS, SECRET_ROLE_DEFINITIONS, SECRET_ROLE_COUNT_WEIGHTS };

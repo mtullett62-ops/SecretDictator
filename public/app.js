@@ -22,6 +22,31 @@ const POWER_LABEL = {
   execution: 'Execute'
 };
 
+const SECRET_ROLE_ICON = {
+  policeChief: '\u{1F694}',
+  assassin: '\u{1F5E1}\u{FE0F}',
+  journalist: '\u{1F4F0}',
+  industrialist: '\u{1F3ED}',
+  unionOrganizer: '\u{270A}',
+  constitutionalJudge: '\u{2696}\u{FE0F}'
+};
+
+const SECRET_ACTION_LABEL = {
+  arrest: 'Arrest',
+  eliminate: 'Eliminate',
+  revealDiscardedPolicy: 'Reveal Policy',
+  forcePassElection: 'Force Pass',
+  forceFailElection: 'Force Fail',
+  blockExecutivePower: 'Block Power'
+};
+
+const SECRET_ACTION_CONFIRM = {
+  eliminate: 'Eliminate this player? This cannot be undone.',
+  forcePassElection: 'Force this election to pass, overriding all votes?',
+  forceFailElection: 'Force this election to fail, overriding all votes?',
+  blockExecutivePower: 'Block the pending executive power?'
+};
+
 const STORED_NAME_KEY = 'secretDictator.playerName';
 
 let publicState = null;
@@ -45,6 +70,13 @@ const electionTrack = document.getElementById('electionTrack');
 const actions = document.getElementById('actions');
 const personal = document.getElementById('personal');
 const eventToast = document.getElementById('eventToast');
+const secretRolesPanel = document.getElementById('secretRolesPanel');
+const secretRolesToggleRow = document.getElementById('secretRolesToggleRow');
+const secretRolesToggle = document.getElementById('secretRolesToggle');
+const secretRolesStatus = document.getElementById('secretRolesStatus');
+const secretRolesInfo = document.getElementById('secretRolesInfo');
+const secretActionPanel = document.getElementById('secretActionPanel');
+const secretAction = document.getElementById('secretAction');
 
 let lastToastKey = null;
 let hasRenderedInitialLog = false;
@@ -56,6 +88,12 @@ nameInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') joinGame();
 });
 startButton.addEventListener('click', () => emit('startGame'));
+secretRolesToggle.addEventListener('change', () => {
+  const desired = secretRolesToggle.checked;
+  emit('setSecretRolesEnabled', { enabled: desired }, () => {
+    secretRolesToggle.checked = !desired;
+  });
+});
 
 let resizeTimer = null;
 window.addEventListener('resize', () => {
@@ -119,10 +157,12 @@ function render() {
   renderWinner();
   renderPauseNotice();
   renderPlayers();
+  renderSecretRolesPanel();
   renderBoard();
   renderTableSeating();
   renderPersonal();
   renderActions();
+  renderSecretAction();
   renderEventToast();
 }
 
@@ -188,6 +228,26 @@ function renderPlayers() {
     }
 
     playerList.append(item);
+  }
+}
+
+function renderSecretRolesPanel() {
+  const info = publicState.secretRoles;
+  const canToggle = isMark() && !info.locked;
+  secretRolesToggleRow.style.display = canToggle ? 'flex' : 'none';
+  secretRolesToggle.checked = info.enabled;
+
+  secretRolesStatus.textContent = info.locked
+    ? (info.active ? 'Secret roles are active this game.' : 'Secret roles are off this game.')
+    : (info.enabled ? 'Secret roles will be active next game.' : 'Secret roles are off for the next game.');
+
+  secretRolesInfo.innerHTML = '';
+  for (const role of info.availableRoles) {
+    const chip = document.createElement('span');
+    chip.className = 'chip chip-role';
+    chip.title = role.description;
+    chip.textContent = `${SECRET_ROLE_ICON[role.id] || ''} ${role.name}`;
+    secretRolesInfo.append(chip);
   }
 }
 
@@ -437,6 +497,24 @@ function renderPersonal() {
     personal.append(infoSection('Known fascists', chips));
   }
 
+  if (privateState.secretRoleDetails) {
+    const card = document.createElement('div');
+    card.className = 'secret-role-card';
+
+    const name = document.createElement('div');
+    name.className = 'secret-role-name';
+    name.textContent = `${SECRET_ROLE_ICON[privateState.secretRole] || ''} ${privateState.secretRoleDetails.name}`;
+    card.append(name);
+
+    const desc = document.createElement('div');
+    desc.className = 'secret-role-desc';
+    desc.textContent = privateState.secretRoleDetails.description;
+    card.append(desc);
+
+    if (privateState.secretRoleUsed) card.append(statusBadge('term', 'Already used'));
+    personal.append(infoSection('Secret role', card));
+  }
+
   if (privateState.investigationResult) {
     const chip = document.createElement('span');
     chip.className = `chip chip-${privateState.investigationResult.party}`;
@@ -560,6 +638,32 @@ function renderAdminReset() {
 
   wrapper.append(button);
   actions.append(wrapper);
+}
+
+function renderSecretAction() {
+  if (!privateState || !privateState.secretRoleDetails || !privateState.secretRoleAvailable) {
+    secretActionPanel.style.display = 'none';
+    return;
+  }
+
+  secretActionPanel.style.display = '';
+  secretAction.innerHTML = '';
+
+  const role = privateState.secretRoleDetails;
+  secretAction.append(text(role.description));
+
+  const targetIds = privateState.secretRoleTargetIds;
+  const select = targetIds ? playerSelect(targetIds) : null;
+  if (select) secretAction.append(select);
+
+  const button = document.createElement('button');
+  button.textContent = SECRET_ACTION_LABEL[role.ability] || 'Use Power';
+  button.addEventListener('click', () => {
+    const confirmMessage = SECRET_ACTION_CONFIRM[role.ability];
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
+    emit('useSecretRole', select ? { targetId: select.value } : {});
+  });
+  secretAction.append(button);
 }
 
 function isMark() {

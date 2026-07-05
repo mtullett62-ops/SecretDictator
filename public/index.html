@@ -40,6 +40,16 @@
             <ul id="playerList"></ul>
           </article>
 
+          <article id="secretRolesPanel" class="panel">
+            <h2>Secret Roles</h2>
+            <label id="secretRolesToggleRow" class="toggle-row">
+              <input type="checkbox" id="secretRolesToggle">
+              <span>Enable secret roles for the next game</span>
+            </label>
+            <p id="secretRolesStatus" class="muted-note"></p>
+            <div id="secretRolesInfo" class="chip-row"></div>
+          </article>
+
           <article class="panel">
             <h2>Your Information</h2>
             <div id="personal"></div>
@@ -73,6 +83,11 @@
           <article id="actionsPanel" class="panel actions-panel">
             <h2>Actions</h2>
             <div id="actions"></div>
+          </article>
+
+          <article id="secretActionPanel" class="panel secret-action-panel" style="display: none">
+            <h2>Secret Action</h2>
+            <div id="secretAction"></div>
           </article>
         </div>
 
