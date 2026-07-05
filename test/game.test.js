@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { Game, ROLE_COUNTS, SECRET_ROLE_DEFINITIONS } = require('../game');
+const { Game, ROLE_COUNTS, SECRET_ROLE_DEFINITIONS, SECRET_ROLE_COUNT_TABLE } = require('../game');
 
 function makeGame(count) {
   const game = new Game();
@@ -314,10 +314,12 @@ test('secret roles lock once the game has started', () => {
   assert.equal(game.publicState().secretRoles.active, true);
 });
 
-test('secret role count uses the configured roll thresholds', () => {
+test('secret role count uses the configured chance table', () => {
   const game = new Game();
-  const rolls = [0, 49, 50, 149, 150, 324, 325, 574, 575, 999];
-  const expectedCounts = [5, 5, 4, 4, 3, 3, 2, 2, 1, 1];
+  // Cumulative bounds from SECRET_ROLE_COUNT_TABLE (42.5/25/17.5/10/5%):
+  // [0,425) -> 1, [425,675) -> 2, [675,850) -> 3, [850,950) -> 4, [950,1000) -> 5.
+  const rolls = [0, 424, 425, 674, 675, 849, 850, 949, 950, 999];
+  const expectedCounts = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5];
   let rollIndex = 0;
   game.randomInt = (max) => {
     assert.equal(max, 1000);
@@ -328,6 +330,51 @@ test('secret role count uses the configured roll thresholds', () => {
     rolls.map(() => game.randomSecretRoleCount()),
     expectedCounts
   );
+});
+
+test('secret role count matches its configured percentages over many real rolls', () => {
+  const game = new Game();
+  const trials = 20000;
+  const tolerancePercent = 3;
+  const counts = {};
+
+  for (let i = 0; i < trials; i += 1) {
+    const count = game.randomSecretRoleCount();
+    counts[count] = (counts[count] || 0) + 1;
+  }
+
+  for (const option of SECRET_ROLE_COUNT_TABLE) {
+    const observedPercent = ((counts[option.count] || 0) / trials) * 100;
+    const difference = Math.abs(observedPercent - option.chancePercent);
+    assert.ok(
+      difference <= tolerancePercent,
+      `count ${option.count}: expected ~${option.chancePercent}%, observed ${observedPercent.toFixed(2)}% (over ${trials} trials)`
+    );
+  }
+});
+
+test('secret roles land on both liberal and fascist players over many real games', () => {
+  const parties = new Set();
+  let sawAllFivePlayersAssigned = false;
+  let sawExactlyOneAssigned = false;
+
+  for (let i = 0; i < 300; i += 1) {
+    const game = makeGame(5);
+    game.secretRolesEnabled = true;
+    game.startGame();
+
+    const assigned = game.players.filter((player) => player.secretRole);
+    assert.ok(assigned.length >= 1, 'at least one secret role must always be assigned');
+    assert.ok(assigned.length <= 5, 'never more secret roles than players');
+    if (assigned.length === 5) sawAllFivePlayersAssigned = true;
+    if (assigned.length === 1) sawExactlyOneAssigned = true;
+    for (const player of assigned) parties.add(player.party);
+  }
+
+  assert.ok(parties.has('liberal'), 'expected at least one liberal to receive a secret role across 300 games');
+  assert.ok(parties.has('fascist'), 'expected at least one fascist to receive a secret role across 300 games');
+  assert.ok(sawExactlyOneAssigned, 'expected the common single-role case to occur across 300 games');
+  assert.ok(sawAllFivePlayersAssigned, 'expected the rare all-players case to occur at least once across 300 games');
 });
 
 test('secret roles can be assigned to both liberal and fascist players', () => {

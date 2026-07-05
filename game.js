@@ -71,11 +71,14 @@ const SECRET_ROLE_DEFINITIONS = Object.freeze({
   })
 });
 
-const SECRET_ROLE_COUNT_THRESHOLDS = Object.freeze([
-  Object.freeze({ count: 5, below: 50 }),
-  Object.freeze({ count: 4, below: 150 }),
-  Object.freeze({ count: 3, below: 325 }),
-  Object.freeze({ count: 2, below: 575 })
+// Chances must sum to 100. Listed ascending so randomSecretRoleCount()'s
+// running total is a plain, auditable cumulative distribution.
+const SECRET_ROLE_COUNT_TABLE = Object.freeze([
+  Object.freeze({ count: 1, chancePercent: 42.5 }),
+  Object.freeze({ count: 2, chancePercent: 25 }),
+  Object.freeze({ count: 3, chancePercent: 17.5 }),
+  Object.freeze({ count: 4, chancePercent: 10 }),
+  Object.freeze({ count: 5, chancePercent: 5 })
 ]);
 
 class Game {
@@ -358,10 +361,12 @@ class Game {
 
   randomSecretRoleCount() {
     const roll = this.randomInt(1000);
-    for (const option of SECRET_ROLE_COUNT_THRESHOLDS) {
-      if (roll < option.below) return option.count;
+    let cumulativePerMille = 0;
+    for (const option of SECRET_ROLE_COUNT_TABLE) {
+      cumulativePerMille += option.chancePercent * 10;
+      if (roll < cumulativePerMille) return option.count;
     }
-    return 1;
+    return SECRET_ROLE_COUNT_TABLE[SECRET_ROLE_COUNT_TABLE.length - 1].count;
   }
 
   randomInt(max) {
@@ -1027,4 +1032,4 @@ function formatPower(power) {
   }[power] || power;
 }
 
-module.exports = { Game, PHASES, ROLE_COUNTS, SECRET_ROLE_DEFINITIONS, SECRET_ROLE_COUNT_THRESHOLDS };
+module.exports = { Game, PHASES, ROLE_COUNTS, SECRET_ROLE_DEFINITIONS, SECRET_ROLE_COUNT_TABLE };
