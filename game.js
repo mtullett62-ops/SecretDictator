@@ -1,12 +1,12 @@
 const crypto = require('crypto');
 
 const ROLE_COUNTS = {
-  5: { liberal: 3, fascist: 1, hitler: 1 },
-  6: { liberal: 4, fascist: 1, hitler: 1 },
-  7: { liberal: 4, fascist: 2, hitler: 1 },
-  8: { liberal: 5, fascist: 2, hitler: 1 },
-  9: { liberal: 5, fascist: 3, hitler: 1 },
-  10: { liberal: 6, fascist: 3, hitler: 1 }
+  5: { liberal: 3, fascist: 1, dictator: 1 },
+  6: { liberal: 4, fascist: 1, dictator: 1 },
+  7: { liberal: 4, fascist: 2, dictator: 1 },
+  8: { liberal: 5, fascist: 2, dictator: 1 },
+  9: { liberal: 5, fascist: 3, dictator: 1 },
+  10: { liberal: 6, fascist: 3, dictator: 1 }
 };
 
 const FASCIST_POWERS = {
@@ -39,7 +39,7 @@ const SECRET_ROLE_DEFINITIONS = Object.freeze({
     name: 'Assassin',
     type: 'power',
     ability: 'eliminate',
-    description: 'Can eliminate a player. Killing Hitler gives liberals the win.'
+    description: 'Can eliminate a player. Killing dictator gives liberals the win.'
   }),
   journalist: Object.freeze({
     id: 'journalist',
@@ -351,12 +351,35 @@ class Game {
     const roleIds = Object.keys(SECRET_ROLE_DEFINITIONS);
     const secretRoleCount = Math.min(this.randomSecretRoleCount(), this.players.length, roleIds.length);
     const selectedPlayers = this.randomSample(this.players, secretRoleCount);
-    const selectedRoleIds = this.randomSample(roleIds, secretRoleCount);
+    const selectedRoleIds = this.avoidAssigningAssassinTodictator(
+      this.randomSample(roleIds, secretRoleCount),
+      selectedPlayers
+    );
 
     for (let index = 0; index < selectedPlayers.length; index += 1) {
       selectedPlayers[index].secretRole = selectedRoleIds[index];
       selectedPlayers[index].secretRoleUsed = false;
     }
+  }
+
+  // dictator must never receive the Assassin secret role. Everything else
+  // about the draw (which players, which roles, how many) is untouched -
+  // this only reroutes the one role dictator would otherwise have landed on.
+  avoidAssigningAssassinTodictator(selectedRoleIds, selectedPlayers) {
+    const assassinIndex = selectedRoleIds.indexOf('assassin');
+    if (assassinIndex === -1) return selectedRoleIds;
+    const dictatorIndex = selectedPlayers.findIndex((player) => player.role === 'dictator');
+    if (dictatorIndex !== assassinIndex) return selectedRoleIds;
+
+    const updated = [...selectedRoleIds];
+    if (updated.length > 1) {
+      const swapIndex = (assassinIndex + 1) % updated.length;
+      [updated[assassinIndex], updated[swapIndex]] = [updated[swapIndex], updated[assassinIndex]];
+      return updated;
+    }
+
+    updated[assassinIndex] = Object.keys(SECRET_ROLE_DEFINITIONS).find((id) => id !== 'assassin');
+    return updated;
   }
 
   randomSecretRoleCount() {
@@ -418,8 +441,8 @@ class Game {
     target.alive = false;
     player.secretRoleUsed = true;
     this.addLog(`A hidden power eliminated ${target.name}.`);
-    if (target.role === 'hitler') {
-      this.endGame('liberals', 'Hitler was eliminated by a secret power.');
+    if (target.role === 'dictator') {
+      this.endGame('liberals', 'dictator was eliminated by a secret power.');
     }
   }
 
@@ -608,8 +631,8 @@ class Game {
     if (this.pendingPower === 'execution') {
       target.alive = false;
       this.addLog(`${president.name} executed ${target.name}.`);
-      if (target.role === 'hitler') {
-        this.endGame('liberals', 'Hitler was executed.');
+      if (target.role === 'dictator') {
+        this.endGame('liberals', 'dictator was executed.');
         return;
       }
       this.finishRound();
@@ -647,8 +670,8 @@ class Game {
 
     this.arrestedPlayerId = null;
     this.electionTracker = 0;
-    if (this.fascistPolicies >= 3 && this.getPlayer(this.currentChancellorId).role === 'hitler') {
-      this.endGame('fascists', 'Hitler was elected Chancellor after three Fascist policies.');
+    if (this.fascistPolicies >= 3 && this.getPlayer(this.currentChancellorId).role === 'dictator') {
+      this.endGame('fascists', 'dictator was elected Chancellor after three Fascist policies.');
       return;
     }
 
@@ -781,7 +804,7 @@ class Game {
     return shuffle([
       ...Array(counts.liberal).fill('liberal'),
       ...Array(counts.fascist).fill('fascist'),
-      ...Array(counts.hitler).fill('hitler')
+      ...Array(counts.dictator).fill('dictator')
     ]);
   }
 

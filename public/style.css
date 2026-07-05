@@ -735,7 +735,7 @@ button:disabled {
   background: linear-gradient(160deg, #d0604a, #7c211a);
 }
 
-.avatar-hitler {
+.avatar-dictator {
   background: linear-gradient(160deg, #4a4038, #17130f);
 }
 
@@ -841,7 +841,7 @@ button:disabled {
 }
 
 .chip-fascist,
-.chip-hitler {
+.chip-dictator {
   background: linear-gradient(160deg, #d0604a, #8c2a20);
 }
 

@@ -1,6 +1,6 @@
 # SecretDictator
 
-A small single-server, multi-browser implementation of Secret Hitler.
+A small single-server, multi-browser implementation of Secret dictator.
 
 ## Run
 

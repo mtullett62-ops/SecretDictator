@@ -17,30 +17,30 @@ test('assigns the official role distribution for each player count', () => {
     const roles = tally(game.players.map((player) => player.role));
     assert.equal(roles.liberal || 0, ROLE_COUNTS[count].liberal);
     assert.equal(roles.fascist || 0, ROLE_COUNTS[count].fascist);
-    assert.equal(roles.hitler || 0, ROLE_COUNTS[count].hitler);
+    assert.equal(roles.dictator || 0, ROLE_COUNTS[count].dictator);
   }
 });
 
 test('keeps role visibility private for 5 and 6 player games', () => {
   const game = makeGame(5);
   game.startGame();
-  const hitler = game.players.find((player) => player.role === 'hitler');
+  const dictator = game.players.find((player) => player.role === 'dictator');
   const fascist = game.players.find((player) => player.role === 'fascist');
   const liberal = game.players.find((player) => player.role === 'liberal');
 
-  assert.deepEqual(game.privateStateFor(hitler.socketId).visibleRoles.map((player) => player.role), ['fascist']);
-  assert.deepEqual(game.privateStateFor(fascist.socketId).visibleRoles.map((player) => player.role), ['hitler']);
+  assert.deepEqual(game.privateStateFor(dictator.socketId).visibleRoles.map((player) => player.role), ['fascist']);
+  assert.deepEqual(game.privateStateFor(fascist.socketId).visibleRoles.map((player) => player.role), ['dictator']);
   assert.deepEqual(game.privateStateFor(liberal.socketId).visibleRoles, []);
 });
 
-test('keeps Hitler from seeing fascists in 7 to 10 player games', () => {
+test('keeps dictator from seeing fascists in 7 to 10 player games', () => {
   const game = makeGame(7);
   game.startGame();
-  const hitler = game.players.find((player) => player.role === 'hitler');
+  const dictator = game.players.find((player) => player.role === 'dictator');
   const fascist = game.players.find((player) => player.role === 'fascist');
 
-  assert.deepEqual(game.privateStateFor(hitler.socketId).visibleRoles, []);
-  assert(game.privateStateFor(fascist.socketId).visibleRoles.some((player) => player.role === 'hitler'));
+  assert.deepEqual(game.privateStateFor(dictator.socketId).visibleRoles, []);
+  assert(game.privateStateFor(fascist.socketId).visibleRoles.some((player) => player.role === 'dictator'));
 });
 
 test('only the current president can nominate an eligible chancellor', () => {
@@ -387,7 +387,7 @@ test('secret roles can be assigned to both liberal and fascist players', () => {
     game.addPlayer('dave-socket', 'Dave')
   ];
   game.randomInitialPresidentIndex = () => 0;
-  game.shuffledRoles = () => ['liberal', 'fascist', 'hitler', 'liberal', 'liberal'];
+  game.shuffledRoles = () => ['liberal', 'fascist', 'dictator', 'liberal', 'liberal'];
   game.randomSecretRoleCount = () => 3;
   game.randomSample = (items, count) => items.slice(0, count);
 
@@ -411,6 +411,61 @@ test('secret roles can be assigned to both liberal and fascist players', () => {
   assert.equal(new Set(assignedPlayers.map((player) => player.secretRole)).size, 3);
 });
 
+test('dictator never receives the assassin role, even when the natural draw would give it to them', () => {
+  const game = makeGame(6);
+  game.secretRolesEnabled = true;
+  game.randomSecretRoleCount = () => 6;
+  game.randomSample = (items, count) => items.slice(0, count);
+  // dictator at index 1 is exactly where 'assassin' would land under the
+  // identity-slice mock (Object.keys(SECRET_ROLE_DEFINITIONS)[1] === 'assassin').
+  game.shuffledRoles = () => ['liberal', 'dictator', 'liberal', 'fascist', 'liberal', 'liberal'];
+  game.startGame();
+
+  const dictator = game.players[1];
+  assert.equal(dictator.role, 'dictator');
+  assert.notEqual(dictator.secretRole, 'assassin');
+  assert.ok(dictator.secretRole, 'dictator should still receive a different role instead of losing their slot');
+
+  const assassin = game.players.find((player) => player.secretRole === 'assassin');
+  assert.ok(assassin, 'assassin should still be handed to someone else');
+  assert.notEqual(assassin.role, 'dictator');
+
+  const secretRoles = game.players.map((player) => player.secretRole);
+  assert.equal(new Set(secretRoles.filter(Boolean)).size, 6, 'all six roles should still be assigned uniquely');
+});
+
+test('dictator gets a substitute role instead of assassin when only one secret role is drawn', () => {
+  const game = makeGame(5);
+  game.secretRolesEnabled = true;
+  game.randomSecretRoleCount = () => 1;
+  // Force the single draw to land on dictator (players are objects) and on
+  // 'assassin' (role ids are strings) - the no-swap-partner fallback case,
+  // since there's no second selected slot to swap with.
+  game.randomSample = (items, count) => (typeof items[0] === 'string' ? ['assassin'] : items.slice(0, count));
+  game.shuffledRoles = () => ['dictator', 'liberal', 'liberal', 'fascist', 'liberal'];
+  game.startGame();
+
+  const dictator = game.players[0];
+  assert.equal(dictator.role, 'dictator');
+  assert.equal(dictator.secretRole, 'policeChief');
+  assert.notEqual(dictator.secretRole, 'assassin');
+});
+
+test('dictator never receives the assassin role across many real random games', () => {
+  let assassinAssignedAtLeastOnce = false;
+  for (let trial = 0; trial < 500; trial += 1) {
+    const game = makeGame(6);
+    game.secretRolesEnabled = true;
+    game.startGame();
+
+    const dictator = game.players.find((player) => player.role === 'dictator');
+    assert.notEqual(dictator.secretRole, 'assassin', `trial ${trial}: dictator must never receive assassin`);
+    if (game.players.some((player) => player.secretRole === 'assassin')) assassinAssignedAtLeastOnce = true;
+  }
+
+  assert.ok(assassinAssignedAtLeastOnce, 'assassin should still show up for non-dictator players across 500 games');
+});
+
 test('secret roles are only visible in the assigned player private state', () => {
   const game = makeGame(5);
   game.randomSecretRoleCount = () => 1;
@@ -432,6 +487,15 @@ test('secret roles are only visible in the assigned player private state', () =>
 
 function makeGameWithAllSecretRoles(count) {
   const game = makeGame(count);
+  const roleCounts = ROLE_COUNTS[count];
+  // Pin dictator to the last seat (not index 1, the Assassin's natural slot
+  // under the identity-slice randomSample mock below) so these ability
+  // tests stay deterministic regardless of the dictator/Assassin exclusion.
+  game.shuffledRoles = () => [
+    ...Array(roleCounts.liberal).fill('liberal'),
+    ...Array(roleCounts.fascist).fill('fascist'),
+    'dictator'
+  ];
   game.secretRolesEnabled = true;
   game.randomSecretRoleCount = () => 6;
   game.randomSample = (items, sampleCount) => items.slice(0, sampleCount);
@@ -554,21 +618,21 @@ test('police chief and assassin are only usable before a chancellor is nominated
   assert.throws(() => game.useSecretRole(assassin.socketId, { targetId: target.id }), /Invalid action/);
 });
 
-test('assassin can eliminate a player, and eliminating Hitler ends the game for liberals', () => {
+test('assassin can eliminate a player, and eliminating dictator ends the game for liberals', () => {
   const game = makeGameWithAllSecretRoles(6);
-  game.shuffledRoles = () => ['liberal', 'liberal', 'liberal', 'liberal', 'fascist', 'hitler'];
+  game.shuffledRoles = () => ['liberal', 'liberal', 'liberal', 'liberal', 'fascist', 'dictator'];
   game.randomInitialPresidentIndex = () => 0;
   game.startGame();
 
   const assassin = game.players[1];
-  const hitler = game.players[5];
+  const dictator = game.players[5];
   assert.equal(assassin.secretRole, 'assassin');
-  assert.equal(hitler.role, 'hitler');
-  assert.notEqual(game.currentPresidentId, hitler.id);
+  assert.equal(dictator.role, 'dictator');
+  assert.notEqual(game.currentPresidentId, dictator.id);
 
-  game.useSecretRole(assassin.socketId, { targetId: hitler.id });
+  game.useSecretRole(assassin.socketId, { targetId: dictator.id });
 
-  assert.equal(hitler.alive, false);
+  assert.equal(dictator.alive, false);
   assert.equal(assassin.secretRoleUsed, true);
   assert.equal(game.winner, 'liberals');
   assert.equal(game.phase, 'game_over');

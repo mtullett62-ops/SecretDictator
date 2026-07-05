@@ -490,7 +490,7 @@ function renderPersonal() {
     chips.className = 'chip-row';
     for (const player of privateState.visibleRoles) {
       const chip = document.createElement('span');
-      chip.className = `chip chip-${player.role === 'hitler' ? 'hitler' : 'fascist'}`;
+      chip.className = `chip chip-${player.role === 'dictator' ? 'dictator' : 'fascist'}`;
       chip.textContent = `${roleIcon(player.role)} ${player.name}`;
       chips.append(chip);
     }
@@ -577,7 +577,7 @@ function statusBadge(kind, label) {
 }
 
 function roleIcon(role) {
-  return { liberal: '🕊️', fascist: '🔥', hitler: '🎩' }[role] || '❔';
+  return { liberal: '🕊️', fascist: '🔥', dictator: '🎩' }[role] || '❔';
 }
 
 function partyIcon(party) {
