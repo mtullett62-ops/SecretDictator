@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { Game, ROLE_COUNTS, SECRET_ROLE_DEFINITIONS, SECRET_ROLE_COUNT_WEIGHTS } = require('../game');
+const { Game, ROLE_COUNTS, SECRET_ROLE_DEFINITIONS } = require('../game');
 
 function makeGame(count) {
   const game = new Game();
@@ -314,13 +314,13 @@ test('secret roles lock once the game has started', () => {
   assert.equal(game.publicState().secretRoles.active, true);
 });
 
-test('secret role count uses the configured weighted chances', () => {
+test('secret role count uses the configured roll thresholds', () => {
   const game = new Game();
-  const rolls = [0, 424, 425, 674, 675, 849, 850, 949, 950, 999];
-  const expectedCounts = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5];
+  const rolls = [0, 49, 50, 149, 150, 324, 325, 574, 575, 999];
+  const expectedCounts = [5, 5, 4, 4, 3, 3, 2, 2, 1, 1];
   let rollIndex = 0;
   game.randomInt = (max) => {
-    assert.equal(max, totalSecretRoleWeight());
+    assert.equal(max, 1000);
     return rolls[rollIndex++];
   };
 
@@ -330,7 +330,7 @@ test('secret role count uses the configured weighted chances', () => {
   );
 });
 
-test('secret roles assign unique power roles to unique players when enabled', () => {
+test('secret roles can be assigned to both liberal and fascist players', () => {
   const game = new Game();
   const players = [
     game.addPlayer('mark-socket', 'mark'),
@@ -357,6 +357,8 @@ test('secret roles assign unique power roles to unique players when enabled', ()
     assignedPlayers.map((player) => player.party),
     ['liberal', 'fascist', 'fascist']
   );
+  assert(assignedPlayers.some((player) => player.party === 'liberal'));
+  assert(assignedPlayers.some((player) => player.party === 'fascist'));
   assert.deepEqual(assignedPlayers.map((player) => player.secretRoleUsed), [false, false, false]);
   assert.equal(new Set(assignedPlayers.map((player) => player.id)).size, 3);
   assert.equal(new Set(assignedPlayers.map((player) => player.secretRole)).size, 3);
@@ -441,7 +443,7 @@ test('police chief cannot arrest the sitting president', () => {
   assert.equal(game.privateStateFor(policeChief.socketId).secretRoleTargetIds.includes(president.id), false);
 });
 
-test('an arrested player is skipped by normal president rotation', () => {
+test('an arrested player is skipped by normal president rotation after a failed election', () => {
   const game = makeGameWithAllSecretRoles(6);
   game.randomInitialPresidentIndex = () => 0;
   game.startGame();
@@ -460,18 +462,48 @@ test('an arrested player is skipped by normal president rotation', () => {
   assert.equal(game.arrestedPlayerId, null);
 });
 
-test('secret role actions are restricted to their usable phase', () => {
+test('an arrest does not block normal president rotation after the government passes', () => {
+  const game = makeGameWithAllSecretRoles(6);
+  game.randomInitialPresidentIndex = () => 0;
+  game.startGame();
+  game.deck = ['liberal', 'liberal', 'liberal', ...game.deck];
+
+  const policeChief = game.players[0];
+  const president = game.getPlayer(game.currentPresidentId);
+  const nextPresidentInRotation = game.players[1];
+  game.useSecretRole(policeChief.socketId, { targetId: nextPresidentInRotation.id });
+
+  const nominee = game.getEligibleChancellors()[0];
+  game.nominateChancellor(president.socketId, nominee.id);
+  for (const player of game.livingPlayers()) game.castVote(player.socketId, 'ja');
+  assert.equal(game.arrestedPlayerId, null);
+
+  game.presidentDiscard(president.socketId, 0);
+  game.chancellorChoose(nominee.socketId, { policyIndex: 0 });
+
+  assert.equal(game.currentPresidentId, nextPresidentInRotation.id);
+  assert.equal(game.arrestedPlayerId, null);
+});
+
+test('police chief and assassin are only usable before a chancellor is nominated', () => {
   const game = makeGameWithAllSecretRoles(6);
   game.randomInitialPresidentIndex = () => 0;
   game.startGame();
 
+  const policeChief = game.players[0];
   const assassin = game.players[1];
   const president = game.getPlayer(game.currentPresidentId);
+  assert.equal(game.privateStateFor(policeChief.socketId).secretRoleAvailable, true);
+  assert.equal(game.privateStateFor(assassin.socketId).secretRoleAvailable, true);
+
   const nominee = game.getEligibleChancellors()[0];
   game.nominateChancellor(president.socketId, nominee.id);
   assert.equal(game.phase, 'voting');
 
   const target = game.players.find((player) => player.id !== assassin.id && player.id !== president.id);
+  assert.equal(game.privateStateFor(policeChief.socketId).secretRoleAvailable, false);
+  assert.equal(game.privateStateFor(assassin.socketId).secretRoleAvailable, false);
+  assert.throws(() => game.useSecretRole(policeChief.socketId, { targetId: target.id }), /Invalid action/);
   assert.throws(() => game.useSecretRole(assassin.socketId, { targetId: target.id }), /Invalid action/);
 });
 
@@ -522,6 +554,22 @@ test('journalist can reveal a discarded policy from the discard pile', () => {
   assert.match(game.log[game.log.length - 1].message, /revealed a discarded policy: Fascist/);
 });
 
+test('journalist is only available during an active game with discarded policies', () => {
+  const game = makeGameWithAllSecretRoles(6);
+  game.startGame();
+
+  const journalist = game.players[2];
+  assert.equal(game.privateStateFor(journalist.socketId).secretRoleAvailable, false);
+  assert.throws(() => game.useSecretRole(journalist.socketId, {}), /no discarded policies/i);
+
+  game.discard.push('liberal');
+  assert.equal(game.privateStateFor(journalist.socketId).secretRoleAvailable, true);
+
+  game.phase = 'game_over';
+  assert.equal(game.privateStateFor(journalist.socketId).secretRoleAvailable, false);
+  assert.throws(() => game.useSecretRole(journalist.socketId, {}), /game is not active/i);
+});
+
 test('industrialist can force an election to pass regardless of votes', () => {
   const game = makeGameWithAllSecretRoles(6);
   game.startGame();
@@ -546,6 +594,22 @@ test('industrialist can force an election to pass regardless of votes', () => {
   assert.equal(industrialist.secretRoleUsed, true);
 });
 
+test('industrialist is only usable during voting', () => {
+  const game = makeGameWithAllSecretRoles(6);
+  game.startGame();
+
+  const industrialist = game.players[3];
+  assert.equal(game.privateStateFor(industrialist.socketId).secretRoleAvailable, false);
+  assert.throws(() => game.useSecretRole(industrialist.socketId, {}), /Invalid action/);
+
+  const president = game.getPlayer(game.currentPresidentId);
+  const nominee = game.getEligibleChancellors()[0];
+  game.nominateChancellor(president.socketId, nominee.id);
+
+  assert.equal(game.phase, 'voting');
+  assert.equal(game.privateStateFor(industrialist.socketId).secretRoleAvailable, true);
+});
+
 test('union organizer can force an election to fail regardless of votes', () => {
   const game = makeGameWithAllSecretRoles(6);
   game.startGame();
@@ -567,6 +631,22 @@ test('union organizer can force an election to fail regardless of votes', () => 
   assert.equal(game.lastVoteResult.forced, true);
   assert.equal(game.electionTracker, 1);
   assert.equal(unionOrganizer.secretRoleUsed, true);
+});
+
+test('union organizer is only usable during voting', () => {
+  const game = makeGameWithAllSecretRoles(6);
+  game.startGame();
+
+  const unionOrganizer = game.players[4];
+  assert.equal(game.privateStateFor(unionOrganizer.socketId).secretRoleAvailable, false);
+  assert.throws(() => game.useSecretRole(unionOrganizer.socketId, {}), /Invalid action/);
+
+  const president = game.getPlayer(game.currentPresidentId);
+  const nominee = game.getEligibleChancellors()[0];
+  game.nominateChancellor(president.socketId, nominee.id);
+
+  assert.equal(game.phase, 'voting');
+  assert.equal(game.privateStateFor(unionOrganizer.socketId).secretRoleAvailable, true);
 });
 
 test('constitutional judge can block a pending executive power', () => {
@@ -598,10 +678,15 @@ test('constitutional judge cannot block when no executive power is pending', () 
   game.startGame();
 
   const judge = game.players[5];
+  assert.equal(game.privateStateFor(judge.socketId).secretRoleAvailable, false);
   game.phase = 'executive_action';
   game.pendingPower = null;
 
+  assert.equal(game.privateStateFor(judge.socketId).secretRoleAvailable, false);
   assert.throws(() => game.useSecretRole(judge.socketId, {}), /No executive power is pending/);
+
+  game.pendingPower = 'execution';
+  assert.equal(game.privateStateFor(judge.socketId).secretRoleAvailable, true);
 });
 
 test('only a player with an unused secret role can use one', () => {
@@ -770,8 +855,4 @@ function tally(values) {
     counts[value] = (counts[value] || 0) + 1;
     return counts;
   }, {});
-}
-
-function totalSecretRoleWeight() {
-  return SECRET_ROLE_COUNT_WEIGHTS.reduce((total, option) => total + option.weight, 0);
 }

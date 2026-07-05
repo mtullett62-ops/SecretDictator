@@ -71,12 +71,11 @@ const SECRET_ROLE_DEFINITIONS = Object.freeze({
   })
 });
 
-const SECRET_ROLE_COUNT_WEIGHTS = Object.freeze([
-  Object.freeze({ count: 1, weight: 425 }),
-  Object.freeze({ count: 2, weight: 250 }),
-  Object.freeze({ count: 3, weight: 175 }),
-  Object.freeze({ count: 4, weight: 100 }),
-  Object.freeze({ count: 5, weight: 50 })
+const SECRET_ROLE_COUNT_THRESHOLDS = Object.freeze([
+  Object.freeze({ count: 5, below: 50 }),
+  Object.freeze({ count: 4, below: 150 }),
+  Object.freeze({ count: 3, below: 325 }),
+  Object.freeze({ count: 2, below: 575 })
 ]);
 
 class Game {
@@ -358,11 +357,9 @@ class Game {
   }
 
   randomSecretRoleCount() {
-    const totalWeight = SECRET_ROLE_COUNT_WEIGHTS.reduce((total, option) => total + option.weight, 0);
-    let roll = this.randomInt(totalWeight);
-    for (const option of SECRET_ROLE_COUNT_WEIGHTS) {
-      if (roll < option.weight) return option.count;
-      roll -= option.weight;
+    const roll = this.randomInt(1000);
+    for (const option of SECRET_ROLE_COUNT_THRESHOLDS) {
+      if (roll < option.below) return option.count;
     }
     return 1;
   }
@@ -457,16 +454,14 @@ class Game {
     switch (ability) {
       case 'arrest':
         if (this.phase !== PHASES.NOMINATION) return unavailable;
-        return {
-          available: true,
-          targetIds: this.otherLivingConnectedIds(player.id).filter((id) => id !== this.currentPresidentId)
-        };
+        return this.availableSecretRoleTargets(
+          this.otherLivingConnectedIds(player.id).filter((id) => id !== this.currentPresidentId)
+        );
       case 'eliminate':
         if (this.phase !== PHASES.NOMINATION) return unavailable;
-        return {
-          available: true,
-          targetIds: this.otherLivingConnectedIds(player.id).filter((id) => id !== this.currentPresidentId)
-        };
+        return this.availableSecretRoleTargets(
+          this.otherLivingConnectedIds(player.id).filter((id) => id !== this.currentPresidentId)
+        );
       case 'revealDiscardedPolicy':
         if (this.phase === PHASES.LOBBY || this.phase === PHASES.GAME_OVER || !this.discard.length) return unavailable;
         return { available: true, targetIds: null };
@@ -486,6 +481,10 @@ class Game {
     return this.livingPlayers()
       .filter((player) => player.connected && player.id !== excludePlayerId)
       .map((player) => player.id);
+  }
+
+  availableSecretRoleTargets(targetIds) {
+    return targetIds.length ? { available: true, targetIds } : { available: false, targetIds: [] };
   }
 
   chooseInitialPresident() {
@@ -641,6 +640,7 @@ class Game {
       return;
     }
 
+    this.arrestedPlayerId = null;
     this.electionTracker = 0;
     if (this.fascistPolicies >= 3 && this.getPlayer(this.currentChancellorId).role === 'hitler') {
       this.endGame('fascists', 'Hitler was elected Chancellor after three Fascist policies.');
@@ -1027,4 +1027,4 @@ function formatPower(power) {
   }[power] || power;
 }
 
-module.exports = { Game, PHASES, ROLE_COUNTS, SECRET_ROLE_DEFINITIONS, SECRET_ROLE_COUNT_WEIGHTS };
+module.exports = { Game, PHASES, ROLE_COUNTS, SECRET_ROLE_DEFINITIONS, SECRET_ROLE_COUNT_THRESHOLDS };
